@@ -41,32 +41,44 @@ async def embed(text: str) -> list[float] | None:
     return None
 
 
-async def retrieve_statutes(query: str, k: int = 6) -> list[dict[str, Any]]:
-    """Top-k BNS/BNSS/BSA statute chunks relevant to `query`.
+async def retrieve_statutes(
+    query: str, k: int = 6, codes: tuple[str, ...] | None = None
+) -> list[dict[str, Any]]:
+    """Top-k statute chunks relevant to `query`.
 
-    Tries vector search if an embedding is available, else keyword search."""
+    `codes` optionally restricts the search to specific law codes. Charge
+    classification passes codes=('BNS',): only the BNS defines punishable
+    offences, so a procedural BNSS section or an evidentiary BSA section can never
+    be returned as a candidate "charge". Tries vector search if an embedding is
+    available, else keyword search."""
     vec = await embed(query)
     if vec is not None:
-        return await _vector_search(vec, k)
-    return await _keyword_search(query, k)
+        return await _vector_search(vec, k, codes)
+    return await _keyword_search(query, k, codes)
 
 
-async def _vector_search(vec: list[float], k: int) -> list[dict[str, Any]]:
+async def _vector_search(
+    vec: list[float], k: int, codes: tuple[str, ...] | None
+) -> list[dict[str, Any]]:
     rows = await pool().fetch(
         """
         SELECT id, code, section_no, heading, text, old_code_ref
         FROM statute_chunks
         WHERE embedding IS NOT NULL
+          AND ($2::text[] IS NULL OR code = ANY($2))
         ORDER BY embedding <=> $1::vector
-        LIMIT $2
+        LIMIT $3
         """,
         vec,
+        list(codes) if codes else None,
         k,
     )
     return [dict(r) for r in rows]
 
 
-async def _keyword_search(query: str, k: int) -> list[dict[str, Any]]:
+async def _keyword_search(
+    query: str, k: int, codes: tuple[str, ...] | None
+) -> list[dict[str, Any]]:
     # OR-match over heading+text, returning ONLY chunks that actually match (the
     # @@ filter) so we never fall back to arbitrary section-number ordering.
     tsq = _or_tsquery(query)
@@ -82,11 +94,13 @@ async def _keyword_search(query: str, k: int) -> list[dict[str, Any]]:
         WHERE to_tsvector('english',
                   heading || ' ' || text || ' ' || coalesce(keywords,''))
               @@ to_tsquery('english', $1)
+          AND ($3::text[] IS NULL OR code = ANY($3))
         ORDER BY rank DESC
         LIMIT $2
         """,
         tsq,
         k,
+        list(codes) if codes else None,
     )
     return [
         {"id": r["id"], "code": r["code"], "section_no": r["section_no"],

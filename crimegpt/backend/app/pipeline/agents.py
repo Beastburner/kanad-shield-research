@@ -77,7 +77,10 @@ async def classify(
     facts: ExtractedFacts,
 ) -> tuple[list[SuggestedSection], list[dict[str, Any]]]:
     query = _facts_to_query(facts)
-    chunks = await retrieval.retrieve_statutes(query, k=6)
+    # Charges come ONLY from the BNS (the penal code). BNSS is procedure and BSA
+    # is evidence — neither can be a charging section, so restrict candidates to
+    # BNS and never let a procedural FIR section surface as a "charge".
+    chunks = await retrieval.retrieve_statutes(query, k=6, codes=("BNS",))
     if not chunks:
         return [], chunks
 

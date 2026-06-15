@@ -232,8 +232,32 @@ INSERT INTO statute_chunks (code, section_no, heading, text, keywords) VALUES
  'number witnesses single witness sole testimony reliable proof'),
 ('BNS', '226', 'Attempt to commit suicide to compel/restrain public servant',
  'Whoever attempts to commit suicide with the intent to compel or restrain any public servant from discharging official duty is punishable with simple imprisonment up to one year, fine, community service, or all.',
- 'attempt suicide compel public servant protest self harm threat')
+ 'attempt suicide compel public servant protest self harm threat'),
+-- --- offences by/relating to public servants (corruption-adjacent) --------
+('BNS', '198', 'Public servant disobeying law, with intent to cause injury',
+ 'Whoever, being a public servant, knowingly disobeys any direction of the law as to the way he is to conduct himself as such public servant, intending to cause, or knowing it likely that he will by such disobedience cause, injury to any person, is punishable with imprisonment up to one year, or fine, or both. Covers misuse of official position to harm a person.',
+ 'public servant official government officer abuse misuse of office position disobeyed law illegal demand harassment by official corruption bribe gratification withheld documents pending file'),
+('BNS', '201', 'Public servant framing an incorrect document/record',
+ 'Whoever, being a public servant and charged with the preparation or translation of any document or electronic record, frames, prepares or translates it in a manner he knows or believes to be incorrect, intending or knowing it likely to cause injury, is punishable with imprisonment up to three years, or fine, or both.',
+ 'public servant official fabricated incorrect record document register entry tampered manipulated file false official record forged government'),
+('BNS', '202', 'Public servant unlawfully engaging in trade or bidding for property',
+ 'Whoever, being a public servant, unlawfully engages in trade, or unlawfully buys or bids for certain property, contrary to the duties of his office, is punishable with imprisonment up to one year, or fine, or community service, or all.',
+ 'public servant official unlawful trade conflict of interest abuse office benefit personal gain corruption')
 ON CONFLICT DO NOTHING;
+
+-- Enrich extortion keywords so a bribe/illegal-gratification demand (withholding
+-- an official act to induce payment) surfaces s.308 rather than the FIR section.
+UPDATE statute_chunks
+   SET keywords = keywords || ' bribe bribery illegal gratification corruption public servant official demanded money to release withhold rishvat lanch'
+ WHERE code = 'BNS' AND section_no = '308';
+
+-- Cross-refs for the public-servant offences (incl. special-law pointer).
+UPDATE statute_chunks SET old_code_ref = m.ref FROM (VALUES
+  ('BNS','198','IPC 166 (public servant disobeying law) · cf. Prevention of Corruption Act, 1988 s.7 for bribery'),
+  ('BNS','201','IPC 167 (public servant framing incorrect record)'),
+  ('BNS','202','IPC 168 (public servant unlawfully engaging in trade)')
+) AS m(code, section_no, ref)
+WHERE statute_chunks.code = m.code AND statute_chunks.section_no = m.section_no;
 
 -- Cross-reference (old IPC/CrPC/IEA) for the expanded set. ⚠️ HUMAN-VERIFY.
 UPDATE statute_chunks SET old_code_ref = m.ref FROM (VALUES
