@@ -44,9 +44,14 @@ import {
   ShieldAlert,
   Fingerprint,
   Eye,
-  X
+  X,
+  Image as ImageIcon,
+  ScanFace,
+  Upload,
+  Lock
 } from 'lucide-react';
-import { api, type Case, type FactsBlob, type LegalSection, type Judgment, type DocumentResponse, type DiaryEvent } from '../api';
+import { api, type Case, type FactsBlob, type LegalSection, type Judgment, type DocumentResponse, type DiaryEvent, type Evidence, type FaceMatchResult } from '../api';
+import { useActor } from '../useActor';
 
 // Simple Translate Widget Component
 function TranslatingText({ text, activeLang }: { text: string; activeLang: string }) {
@@ -134,6 +139,7 @@ export default function CaseWorkspace() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
+  const { canWrite } = useActor();
 
   // Tab State
   const [tabValue, setTabValue] = useState(0);
@@ -165,6 +171,20 @@ export default function CaseWorkspace() {
   const [transInput, setTransInput] = useState('');
   const [transOutput, setTransOutput] = useState<string | null>(null);
   const [transLoading, setTransLoading] = useState(false);
+
+  // Manual diary entry (P2)
+  const [diaryNote, setDiaryNote] = useState('');
+  const [addingDiary, setAddingDiary] = useState(false);
+
+  // Evidence (P5) + face match (P7)
+  const [evidence, setEvidence] = useState<Evidence[]>([]);
+  const [evLabel, setEvLabel] = useState('');
+  const [evTags, setEvTags] = useState('');
+  const [evUploading, setEvUploading] = useState(false);
+  const evFileRef = useRef<HTMLInputElement>(null);
+  const probeFileRef = useRef<HTMLInputElement>(null);
+  const [faceResult, setFaceResult] = useState<FaceMatchResult | null>(null);
+  const [faceMatching, setFaceMatching] = useState(false);
 
   const handleQuickTranslate = async (target: 'hi' | 'gu') => {
     if (!transInput.trim()) return;
@@ -244,6 +264,14 @@ export default function CaseWorkspace() {
         setDocuments(docsData);
       } catch (err) {
         console.error('Error fetching documents', err);
+      }
+
+      // Fetch Evidence (P5)
+      try {
+        const evData = await api.listEvidence(id);
+        setEvidence(evData);
+      } catch (err) {
+        console.error('Error fetching evidence', err);
       }
 
       // Fetch Facts (might return 404 if not analyzed yet)
@@ -389,6 +417,67 @@ export default function CaseWorkspace() {
     }
   };
 
+  const handleAddDiary = async () => {
+    if (!id || !diaryNote.trim()) return;
+    try {
+      setAddingDiary(true);
+      setError(null);
+      await api.addDiaryEntry(id, diaryNote.trim());
+      setDiaryNote('');
+      const diaryData = await api.getDiary(id);
+      setDiary(diaryData);
+      setSuccess('Diary entry logged.');
+      setTimeout(() => setSuccess(null), 2500);
+    } catch (err: any) {
+      console.error(err);
+      setError(err.response?.data?.detail || 'Failed to add diary entry.');
+    } finally {
+      setAddingDiary(false);
+    }
+  };
+
+  const handleUploadEvidence = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !id) return;
+    try {
+      setEvUploading(true);
+      setError(null);
+      await api.uploadEvidence(id, file, evLabel, evTags);
+      setEvLabel('');
+      setEvTags('');
+      const evData = await api.listEvidence(id);
+      setEvidence(evData);
+      const diaryData = await api.getDiary(id);
+      setDiary(diaryData);
+      setSuccess('Evidence uploaded and hashed.');
+      setTimeout(() => setSuccess(null), 2500);
+    } catch (err: any) {
+      console.error(err);
+      setError(err.response?.data?.detail || 'Evidence upload failed.');
+    } finally {
+      setEvUploading(false);
+      if (evFileRef.current) evFileRef.current.value = '';
+    }
+  };
+
+  const handleFaceMatch = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !id) return;
+    try {
+      setFaceMatching(true);
+      setFaceResult(null);
+      setError(null);
+      const res = await api.matchFace(id, file);
+      setFaceResult(res);
+    } catch (err: any) {
+      console.error(err);
+      setError(err.response?.data?.detail || 'Face match failed (is OpenCV installed on the backend?).');
+    } finally {
+      setFaceMatching(false);
+      if (probeFileRef.current) probeFileRef.current.value = '';
+    }
+  };
+
   // Editable lists management functions
   const handleFactStringChange = (field: keyof FactsBlob, value: string) => {
     if (!facts) return;
@@ -440,7 +529,8 @@ export default function CaseWorkspace() {
     { type: 'court_custody_letter', label: 'Court Custody Letter', desc: 'Formal request to transfer the accused to judicial custody.' },
     { type: 'accused_panchanama', label: 'Accused Panchanama', desc: 'Witness-verified record of items found on the accused.' },
     { type: 'medical_treatment_letter', label: 'Medical Treatment Letter', desc: 'Authorized letter requesting medical checks for accused.' },
-    { type: 'face_identification_form', label: 'Face Identification Form', desc: 'Mock face match integrity and verification report.' }
+    { type: 'face_identification_form', label: 'Face Identification Form', desc: 'Mock face match integrity and verification report.' },
+    { type: 'lers_request', label: 'Meta/WhatsApp LERS Request', desc: 'Law-enforcement data request to Meta (FB/IG/WhatsApp) under BNSS s.94.' }
   ];
 
   return (
@@ -503,6 +593,13 @@ export default function CaseWorkspace() {
           </Button>
         </Box>
       </Box>
+
+      {/* Read-only role banner (P4) */}
+      {!canWrite && (
+        <Alert severity="info" icon={<Lock size={20} />} sx={{ mb: 3, borderRadius: 2 }}>
+          You are signed in as <strong>Legal Advisor</strong> (read & legal-analysis only). Fact edits, document filing and evidence upload are disabled — switch role in the header to act as IO/SHO.
+        </Alert>
+      )}
 
       {/* Global Alerts */}
       {error && (
@@ -580,7 +677,8 @@ export default function CaseWorkspace() {
               <Tab label="2. Legal Classification" id="tab-legal" icon={<Scale size={16} />} iconPosition="start" />
               <Tab label="3. Legal Documents" id="tab-docs" icon={<FileCheck size={16} />} iconPosition="start" />
               <Tab label="4. Case Diary (Timeline)" id="tab-timeline" icon={<Calendar size={16} />} iconPosition="start" />
-              <Tab label="5. Mock Integrations & Tools" id="tab-mocks" icon={<Globe size={16} />} iconPosition="start" />
+              <Tab label="5. Evidence & Face Match" id="tab-evidence" icon={<ImageIcon size={16} />} iconPosition="start" />
+              <Tab label="6. Mock Integrations & Tools" id="tab-mocks" icon={<Globe size={16} />} iconPosition="start" />
             </Tabs>
           </Box>
 
@@ -598,7 +696,7 @@ export default function CaseWorkspace() {
                     color="primary"
                     startIcon={savingFacts ? <CircularProgress size={16} color="inherit" /> : <CheckCircle size={16} />}
                     onClick={handleSaveFacts}
-                    disabled={savingFacts}
+                    disabled={savingFacts || !canWrite}
                   >
                     {savingFacts ? 'Saving...' : t('saveFacts')}
                   </Button>
@@ -783,7 +881,7 @@ export default function CaseWorkspace() {
                     color="primary"
                     startIcon={savingFacts ? <CircularProgress size={16} color="inherit" /> : <CheckCircle size={16} />}
                     onClick={handleSaveFacts}
-                    disabled={savingFacts}
+                    disabled={savingFacts || !canWrite}
                   >
                     {savingFacts ? 'Saving Facts...' : t('saveFacts')}
                   </Button>
@@ -931,7 +1029,7 @@ export default function CaseWorkspace() {
                             size="small"
                             color="primary"
                             startIcon={generatingDoc === doc.type ? <CircularProgress size={12} /> : <Plus size={12} />}
-                            disabled={generatingDoc !== null}
+                            disabled={generatingDoc !== null || !canWrite}
                             onClick={() => handleGenerateDoc(doc.type)}
                             fullWidth
                           >
@@ -963,9 +1061,16 @@ export default function CaseWorkspace() {
                           <Paper key={idx} sx={{ p: 3, background: '#0f172a', border: '1px solid rgba(255,255,255,0.05)' }}>
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2, flexWrap: 'wrap', gap: 1 }}>
                               <Box>
-                                <Typography variant="subtitle1" sx={{ fontWeight: 800, textTransform: 'capitalize' }}>
-                                  {doc.type.replace('_', ' ')}
-                                </Typography>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                                  <Typography variant="subtitle1" sx={{ fontWeight: 800, textTransform: 'capitalize' }}>
+                                    {doc.type.replace(/_/g, ' ')}
+                                  </Typography>
+                                  <Chip label={`v${doc.version}`} size="small" color="primary" sx={{ height: 20, fontWeight: 700 }} />
+                                  {doc.superseded
+                                    ? <Chip label="superseded" size="small" sx={{ height: 20, bgcolor: 'rgba(148,163,184,0.15)', color: '#94a3b8' }} />
+                                    : <Chip label="current" size="small" sx={{ height: 20, bgcolor: 'rgba(16,185,129,0.15)', color: '#10b981' }} />}
+                                  <Chip label={doc.lang.toUpperCase()} size="small" variant="outlined" sx={{ height: 20, color: 'text.secondary' }} />
+                                </Box>
                                 <Typography variant="caption" color="text.secondary">
                                   Generated: {new Date(doc.generated_at).toLocaleString()}
                                 </Typography>
@@ -1049,9 +1154,32 @@ export default function CaseWorkspace() {
           {tabValue === 3 && (
             <Card sx={{ background: '#111827' }}>
               <CardContent sx={{ p: 4 }}>
-                <Typography variant="h6" sx={{ fontWeight: 700, mb: 4 }}>
+                <Typography variant="h6" sx={{ fontWeight: 700, mb: 3 }}>
                   {t('diary')}
                 </Typography>
+
+                {/* Manual diary entry (P2) */}
+                {canWrite && (
+                  <Box sx={{ display: 'flex', gap: 1.5, mb: 4, alignItems: 'flex-start' }}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      multiline
+                      placeholder="Log an investigative step (e.g. 'Recorded witness statement of Ramesh; arrest of accused at 14:30')"
+                      value={diaryNote}
+                      onChange={(e) => setDiaryNote(e.target.value)}
+                    />
+                    <Button
+                      variant="contained"
+                      startIcon={addingDiary ? <CircularProgress size={14} color="inherit" /> : <Plus size={14} />}
+                      onClick={handleAddDiary}
+                      disabled={addingDiary || !diaryNote.trim()}
+                      sx={{ whiteSpace: 'nowrap', height: 40 }}
+                    >
+                      Add Entry
+                    </Button>
+                  </Box>
+                )}
 
                 <Box sx={{ position: 'relative', pl: 4, '&::before': { content: '""', position: 'absolute', left: 16, top: 4, bottom: 4, width: 2, bgcolor: 'rgba(255,255,255,0.08)' } }}>
                   {diary.map((evt, idx) => {
@@ -1069,6 +1197,12 @@ export default function CaseWorkspace() {
                     } else if (evt.event_type === 'document_generated') {
                       Icon = FileCheck;
                       color = '#8b5cf6';
+                    } else if (evt.event_type === 'evidence_uploaded') {
+                      Icon = ImageIcon;
+                      color = '#06b6d4';
+                    } else if (evt.source === 'officer') {
+                      Icon = BookOpen;
+                      color = '#ec4899';
                     }
 
                     return (
@@ -1077,13 +1211,17 @@ export default function CaseWorkspace() {
                         <Box sx={{ position: 'absolute', left: -36, top: 2, width: 24, height: 24, borderRadius: '50%', bgcolor: color, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 10px ' + color }}>
                           <Icon size={12} style={{ color: '#000' }} />
                         </Box>
-                        
+
                         {/* Event Content */}
                         <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'text.primary' }}>
                           {evt.description}
+                          {evt.source === 'officer' && (
+                            <Chip label="manual" size="small" sx={{ ml: 1, height: 18, fontSize: '0.6rem', bgcolor: 'rgba(236,72,153,0.15)', color: '#ec4899' }} />
+                          )}
                         </Typography>
                         <Typography variant="caption" color="text.secondary">
                           {new Date(evt.occurred_at).toLocaleString()}
+                          {evt.actor && evt.actor !== 'system' ? ` · ${evt.actor}` : ''}
                         </Typography>
                       </Box>
                     );
@@ -1093,8 +1231,132 @@ export default function CaseWorkspace() {
             </Card>
           )}
 
-          {/* TAB 5: MOCK INTEGRATIONS & TOOLS */}
+          {/* TAB 5: EVIDENCE & FACE MATCH */}
           {tabValue === 4 && (
+            <Grid container spacing={4}>
+              {/* Upload + list */}
+              <Grid size={{ xs: 12, md: 7 }}>
+                <Card sx={{ background: '#111827' }}>
+                  <CardContent sx={{ p: 3 }}>
+                    <Typography variant="h6" sx={{ fontWeight: 700, mb: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <ImageIcon size={20} style={{ color: '#06b6d4' }} /> Evidence Locker
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                      Upload evidence images/files. Each is SHA-256 hashed for chain of custody, tagged, and scanned for faces.
+                    </Typography>
+
+                    {canWrite && (
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 3 }}>
+                        <TextField size="small" label="Label (e.g. CCTV still, accused photo)" value={evLabel} onChange={(e) => setEvLabel(e.target.value)} />
+                        <TextField size="small" label="Tags (comma-separated)" value={evTags} onChange={(e) => setEvTags(e.target.value)} />
+                        <input type="file" ref={evFileRef} style={{ display: 'none' }} accept="image/*,application/pdf" onChange={handleUploadEvidence} />
+                        <Button
+                          variant="contained"
+                          startIcon={evUploading ? <CircularProgress size={14} color="inherit" /> : <Upload size={14} />}
+                          onClick={() => evFileRef.current?.click()}
+                          disabled={evUploading}
+                        >
+                          {evUploading ? 'Uploading...' : 'Upload Evidence'}
+                        </Button>
+                      </Box>
+                    )}
+
+                    {evidence.length === 0 ? (
+                      <Typography color="text.secondary" sx={{ fontStyle: 'italic' }}>No evidence uploaded yet.</Typography>
+                    ) : (
+                      <Grid container spacing={2}>
+                        {evidence.map((ev) => (
+                          <Grid size={{ xs: 6, sm: 4 }} key={ev.id}>
+                            <Paper sx={{ p: 1, background: '#0f172a', border: '1px solid rgba(255,255,255,0.05)' }}>
+                              {ev.kind === 'image' ? (
+                                <Box component="img" src={api.getEvidenceUrl(ev.id)} alt={ev.label || 'evidence'}
+                                  sx={{ width: '100%', height: 110, objectFit: 'cover', borderRadius: 1, mb: 1 }} />
+                              ) : (
+                                <Box sx={{ height: 110, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(255,255,255,0.03)', borderRadius: 1, mb: 1 }}>
+                                  <FileDown size={32} style={{ color: '#64748b' }} />
+                                </Box>
+                              )}
+                              <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {ev.label || 'Untitled'}
+                              </Typography>
+                              <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mt: 0.5 }}>
+                                {ev.face_count != null && ev.face_count > 0 && (
+                                  <Chip icon={<ScanFace size={11} />} label={`${ev.face_count} face`} size="small" sx={{ height: 20, bgcolor: 'rgba(6,182,212,0.12)', color: '#06b6d4' }} />
+                                )}
+                                {ev.tags.map((tg, i) => (
+                                  <Chip key={i} label={tg} size="small" variant="outlined" sx={{ height: 20, fontSize: '0.65rem', color: 'text.secondary' }} />
+                                ))}
+                              </Box>
+                              <Tooltip title={ev.sha256}>
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, fontSize: '0.6rem' }}>
+                                  {ev.sha256.substring(0, 18)}…
+                                </Typography>
+                              </Tooltip>
+                            </Paper>
+                          </Grid>
+                        ))}
+                      </Grid>
+                    )}
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              {/* Face match */}
+              <Grid size={{ xs: 12, md: 5 }}>
+                <Card sx={{ background: '#111827' }}>
+                  <CardContent sx={{ p: 3 }}>
+                    <Typography variant="h6" sx={{ fontWeight: 700, mb: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <ScanFace size={20} style={{ color: '#8b5cf6' }} /> Face Match
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                      Upload a probe face photo to match against the case's evidence images.
+                    </Typography>
+                    <Alert severity="warning" sx={{ mb: 2, py: 0.5 }}>
+                      Demonstrative matcher — not a forensic identification.
+                    </Alert>
+                    <input type="file" ref={probeFileRef} style={{ display: 'none' }} accept="image/*" onChange={handleFaceMatch} />
+                    <Button
+                      variant="contained"
+                      color="secondary"
+                      fullWidth
+                      startIcon={faceMatching ? <CircularProgress size={14} color="inherit" /> : <ScanFace size={14} />}
+                      onClick={() => probeFileRef.current?.click()}
+                      disabled={faceMatching || evidence.length === 0}
+                    >
+                      {faceMatching ? 'Matching...' : 'Upload Probe & Match'}
+                    </Button>
+
+                    {faceResult && (
+                      <Box sx={{ mt: 3 }}>
+                        <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                          Probe faces detected: <strong>{faceResult.probe_faces}</strong>
+                        </Typography>
+                        {faceResult.matches.length === 0 ? (
+                          <Typography variant="body2" color="text.secondary">No comparable evidence faces.</Typography>
+                        ) : (
+                          faceResult.matches.map((m) => (
+                            <Box key={m.evidence_id} sx={{ mb: 1.5 }}>
+                              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                                <Typography variant="body2">{m.label || 'Untitled'}</Typography>
+                                <Typography variant="body2" sx={{ fontWeight: 700, color: m.score > 0.6 ? '#10b981' : '#f59e0b' }}>
+                                  {Math.round(m.score * 100)}%
+                                </Typography>
+                              </Box>
+                              <LinearProgress variant="determinate" value={m.score * 100}
+                                sx={{ height: 6, borderRadius: 3, bgcolor: 'rgba(255,255,255,0.05)', '& .MuiLinearProgress-bar': { bgcolor: m.score > 0.6 ? '#10b981' : '#f59e0b' } }} />
+                            </Box>
+                          ))
+                        )}
+                      </Box>
+                    )}
+                  </CardContent>
+                </Card>
+              </Grid>
+            </Grid>
+          )}
+
+          {/* TAB 6: MOCK INTEGRATIONS & TOOLS */}
+          {tabValue === 5 && (
             <Grid container spacing={4}>
               {/* BharatPol Search */}
               <Grid size={{ xs: 12, md: 7 }}>

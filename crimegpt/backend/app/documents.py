@@ -40,6 +40,8 @@ _DOC_META: dict[str, tuple[str, str]] = {
                                  "Under Section 51, Bharatiya Nagarik Suraksha Sanhita, 2023"),
     "face_identification_form": ("ACCUSED FACE IDENTIFICATION FORM",
                                  "Investigation aid — BNS / BNSS proceedings"),
+    "lers_request": ("LAW ENFORCEMENT DATA REQUEST — META / WHATSAPP / INSTAGRAM (LERS)",
+                     "Under Section 94 BNSS, 2023 r/w the IT Act, 2000 and platform LERS policy"),
 }
 
 _BLANK = "____________________"
@@ -447,6 +449,66 @@ def _build_face_identification_form(d, facts, sections, case_number):
     _signoff(d, [["Investigating Officer", "Name & Rank, Police Station"]])
 
 
+def _build_lers_request(d, facts, sections, case_number):
+    _para(d, "To,").runs[0].bold = True
+    _para(d, "The Law Enforcement Response Team,")
+    _para(d, "Meta Platforms, Inc. (Facebook / Instagram / WhatsApp)")
+    _para(d, "via the Law Enforcement Online Request System (LERS).")
+
+    _heading(d, "Subject")
+    _para(d, "Request for preservation and disclosure of subscriber / account data "
+             "in a criminal investigation, under Section 94 BNSS, 2023 read with the "
+             "Information Technology Act, 2000 and the platform's law-enforcement policy.")
+
+    _heading(d, "1. Requesting Authority")
+    _kv(d, [
+        ("Officer name & rank", ""),
+        ("Police Station / Unit", ""),
+        ("Official email (govt. domain)", ""),
+        ("Contact number", ""),
+    ])
+
+    _heading(d, "2. Case Reference")
+    _kv(d, [
+        ("FIR / Crime No.", case_number),
+        ("Date of incident", ", ".join(facts.dates) or ""),
+        ("Nature of offence", facts.events[0] if facts.events else ""),
+    ])
+
+    _heading(d, "3. Sections Invoked")
+    _sections_block(d, sections)
+
+    _heading(d, "4. Target Account / Identifier(s)")
+    _kv(d, [
+        ("Platform (FB / IG / WhatsApp)", ""),
+        ("Username / Profile URL", ""),
+        ("Phone number (with country code)", ""),
+        ("Email / Account ID", ""),
+        ("Relevant date/time range (UTC)", ""),
+    ])
+
+    _heading(d, "5. Data Requested")
+    _numbered(d, [
+        "Basic subscriber information (name, registration details, phone/email).",
+        "Account registration & login IP logs with timestamps (UTC).",
+        "Non-content connection / message metadata for the period specified.",
+        "Content data (only where accompanied by appropriate judicial process).",
+    ])
+
+    _heading(d, "6. Preservation Request (Emergency / Routine)")
+    _para(d, "You are requested to PRESERVE all data associated with the above "
+             "identifier(s) pending formal legal process, to prevent loss/deletion. "
+             "Tick if this is an emergency disclosure request involving risk to life:  [  ]")
+
+    _heading(d, "7. Legal Basis & Undertaking")
+    _para(d, "This request is made for a bona fide criminal investigation. The data "
+             "sought is necessary and proportionate to the offence under investigation. "
+             "Content data, where requested, is supported by the requisite judicial order.")
+
+    _signoff(d, [["Investigating Officer", "Name, Rank & Govt. Email", "Date:"],
+                 ["Endorsing Officer (SHO)", "Name & Rank"]])
+
+
 _BUILDERS = {
     "chargesheet": _build_chargesheet,
     "remand_request": _build_remand_request,
@@ -455,6 +517,7 @@ _BUILDERS = {
     "accused_panchanama": _build_accused_panchanama,
     "medical_treatment_letter": _build_medical_treatment_letter,
     "face_identification_form": _build_face_identification_form,
+    "lers_request": _build_lers_request,
 }
 
 

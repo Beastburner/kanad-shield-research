@@ -12,7 +12,11 @@ DocType = Literal[
     "chargesheet", "remand_request", "seizure_receipt",
     "court_custody_letter", "accused_panchanama",
     "medical_treatment_letter", "face_identification_form",
+    "lers_request",
 ]
+
+# Role-based access (P4): Investigating Officer, Station House Officer, Legal Advisor.
+Role = Literal["IO", "SHO", "LEGAL_ADVISOR"]
 
 DISCLAIMER = "AI-assisted draft — officer review required."
 
@@ -120,6 +124,9 @@ class Document(BaseModel):
     sha256: str
     s63_cert_path: str | None
     generated_at: datetime
+    version: int = 1
+    superseded: bool = False
+    lang: str = "en"
     disclaimer: str = DISCLAIMER
 
 
@@ -128,6 +135,40 @@ class DiaryEntry(BaseModel):
     event_type: str
     description: str
     occurred_at: datetime
+    actor: str = "system"
+    source: str = "system"
+
+
+class DiaryCreate(BaseModel):
+    """A manual case-diary entry logged by an officer (P2)."""
+
+    description: str = Field(min_length=3)
+    event_type: str = "officer_note"
+
+
+# ---- evidence (P5/P7) ----------------------------------------------------
+class Evidence(BaseModel):
+    id: UUID
+    case_id: UUID
+    kind: str
+    label: str | None
+    file_path: str
+    sha256: str
+    tags: list[str] = []
+    face_count: int | None = None
+    uploaded_by: str
+    uploaded_at: datetime
+
+
+class FaceMatchResult(BaseModel):
+    """Result of matching a probe face image against case evidence (P7)."""
+
+    probe_faces: int
+    matches: list[dict[str, Any]] = []   # {evidence_id, label, score, faces}
+    note: str = (
+        "Demonstrative face matcher — not a forensic identification. "
+        "Confirm identity through authorised channels."
+    )
 
 
 # ---- mocks ---------------------------------------------------------------

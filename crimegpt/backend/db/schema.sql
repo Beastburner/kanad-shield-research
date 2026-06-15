@@ -162,6 +162,37 @@ CREATE TABLE IF NOT EXISTS judgments_cache (
     cached_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- ---------------------------------------------------------------------------
+-- 10. evidence — uploaded evidence images/files with tags (P5/P7).
+--     Files are stored on disk under artifact_dir/evidence; the row holds the
+--     path, a SHA-256 integrity hash, free-text tags and an optional face vector.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS evidence (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    case_id      UUID NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+    kind         TEXT NOT NULL DEFAULT 'image',   -- image | document | other
+    label        TEXT,                            -- officer-given name
+    file_path    TEXT NOT NULL,
+    sha256       TEXT NOT NULL,                   -- integrity hash (chain of custody)
+    tags         TEXT[] NOT NULL DEFAULT '{}',
+    face_count   INT,                             -- faces detected (P7), NULL if not run
+    uploaded_by  TEXT NOT NULL DEFAULT 'system',  -- actor (role-based, P4)
+    uploaded_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS evidence_case_idx ON evidence(case_id);
+
+-- ---------------------------------------------------------------------------
+-- Schema upgrades (P2/P3/P4) — additive, safe to re-run.
+-- ---------------------------------------------------------------------------
+-- P3: document version history — keep every generation instead of overwriting.
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS version    INT NOT NULL DEFAULT 1;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS superseded BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS lang       TEXT NOT NULL DEFAULT 'en';
+
+-- P2/P4: manual diary entries + who logged them.
+ALTER TABLE case_diary ADD COLUMN IF NOT EXISTS actor  TEXT NOT NULL DEFAULT 'system';
+ALTER TABLE case_diary ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'system';  -- system | officer
+
 -- Helpful lookup indexes
 CREATE INDEX IF NOT EXISTS suggested_sections_case_idx ON suggested_sections(case_id);
 CREATE INDEX IF NOT EXISTS documents_case_idx ON documents(case_id);

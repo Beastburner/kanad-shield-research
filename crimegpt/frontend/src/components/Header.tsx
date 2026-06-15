@@ -8,19 +8,27 @@ import {
   FormControl,
   MenuItem,
   Select,
+  TextField,
   Toolbar,
   Typography,
   type SelectChangeEvent
 } from '@mui/material';
-import { ShieldCheck, Languages } from 'lucide-react';
+import { ShieldCheck, Languages, UserCog } from 'lucide-react';
+import { ROLE_LABELS, type Role } from '../api';
+import { useActor } from '../useActor';
 
 export default function Header() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
+  const { role, name, update } = useActor();
 
   const handleLanguageChange = (event: SelectChangeEvent) => {
     i18n.changeLanguage(event.target.value);
+  };
+
+  const handleRoleChange = (event: SelectChangeEvent) => {
+    update(event.target.value as Role, name);
   };
 
   return (
@@ -96,6 +104,45 @@ export default function Header() {
                 Dashboard
               </Button>
             )}
+
+            {/* Role / Actor switcher (P4 — RBAC) */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <UserCog size={18} style={{ color: '#9ca3af' }} />
+              <TextField
+                id="actor-name"
+                size="small"
+                value={name}
+                onChange={(e) => update(role, e.target.value)}
+                placeholder="Officer name"
+                sx={{
+                  width: 130,
+                  '& .MuiInputBase-root': { height: 36, fontSize: '0.8rem', bgcolor: 'rgba(255,255,255,0.03)' },
+                  '& .MuiOutlinedInput-notchedOutline': { border: '1px solid rgba(255,255,255,0.08)' },
+                }}
+              />
+              <FormControl size="small" variant="outlined">
+                <Select
+                  id="select-role"
+                  value={role}
+                  onChange={handleRoleChange}
+                  sx={{
+                    color: 'text.primary',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    height: 36,
+                    bgcolor: 'rgba(255, 255, 255, 0.03)',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                    '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.06)' },
+                  }}
+                  MenuProps={{ slotProps: { paper: { sx: { bgcolor: '#111827', border: '1px solid rgba(255,255,255,0.08)' } } } }}
+                >
+                  <MenuItem value="IO">{ROLE_LABELS.IO}</MenuItem>
+                  <MenuItem value="SHO">{ROLE_LABELS.SHO}</MenuItem>
+                  <MenuItem value="LEGAL_ADVISOR">{ROLE_LABELS.LEGAL_ADVISOR}</MenuItem>
+                </Select>
+              </FormControl>
+            </Box>
 
             {/* Language Switcher */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
