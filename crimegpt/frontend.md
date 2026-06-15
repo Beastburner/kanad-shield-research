@@ -75,6 +75,8 @@ Seven screens. The **starred** ones are the demo critical path — build these f
 ### B. New Case ⭐
 - Textarea for the **FIR narrative** + optional case number → `POST /cases`.
 - "Import from CCTNS" button → `POST /mock/cctns/fir` (prefills the textarea with a realistic FIR).
+- **"Upload scanned FIR"** (image file) → `POST /ocr` (multipart `file`) → prefill the textarea
+  with the returned `text` for the officer to review/edit, then `POST /cases`.
 - Narrative may be typed in **English, Hindi, or Gujarati** (the pipeline handles it).
 - On success, stash the returned case `id`, go to screen C.
 

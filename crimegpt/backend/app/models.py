@@ -109,6 +109,7 @@ class AnalyzeResult(BaseModel):
 # ---- documents -----------------------------------------------------------
 class DocumentRequest(BaseModel):
     type: DocType
+    lang: Literal["en", "hi", "gu"] = "en"   # document output language
 
 
 class Document(BaseModel):
@@ -168,3 +169,4 @@ class OcrResponse(BaseModel):
     text: str
     char_count: int
     lang: str
+    source: str = "image_ocr"   # image_ocr | pdf_text | pdf_ocr

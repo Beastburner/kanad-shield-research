@@ -115,6 +115,7 @@ export interface OCRResponse {
   text: string;
   char_count: number;
   lang: string;
+  source: string; // image_ocr | pdf_text | pdf_ocr
 }
 
 export const api = {
@@ -155,15 +156,21 @@ export const api = {
     return response.data;
   },
 
-  // Analyze
+  // Analyze (runs the LLM pipeline — use on user action only)
   analyzeCase: async (id: string): Promise<AnalysisResponse> => {
     const response = await apiClient.post<AnalysisResponse>(`/cases/${id}/analyze`);
     return response.data;
   },
 
-  // Documents
-  generateDocument: async (caseId: string, type: string): Promise<DocumentResponse> => {
-    const response = await apiClient.post<DocumentResponse>(`/cases/${caseId}/documents`, { type });
+  // Read-only stored analysis (no pipeline re-run — use on load)
+  getAnalysis: async (id: string): Promise<AnalysisResponse> => {
+    const response = await apiClient.get<AnalysisResponse>(`/cases/${id}/analysis`);
+    return response.data;
+  },
+
+  // Documents (lang: en | hi | gu — generates the .docx in that language)
+  generateDocument: async (caseId: string, type: string, lang: string = 'en'): Promise<DocumentResponse> => {
+    const response = await apiClient.post<DocumentResponse>(`/cases/${caseId}/documents`, { type, lang });
     return response.data;
   },
 
@@ -178,6 +185,12 @@ export const api = {
 
   getCertificateDownloadUrl: (docId: string): string => {
     return `${BASE_URL}/documents/${docId}/certificate`;
+  },
+
+  // Fetch a document/certificate as a Blob for in-browser preview (docx-preview).
+  fetchDocumentBlob: async (docId: string, kind: 'file' | 'certificate'): Promise<Blob> => {
+    const response = await apiClient.get(`/documents/${docId}/${kind}`, { responseType: 'blob' });
+    return response.data as Blob;
   },
 
   // Diary

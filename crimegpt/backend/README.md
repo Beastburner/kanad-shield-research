@@ -112,7 +112,9 @@ backend/
   every output carries the disclaimer *"AI-assisted draft — officer review required."*
 - Validation fails **closed**: a section the validation agent does not explicitly
   confirm is dropped, never asserted to the officer.
-- No auth, no multilingual, mock-only government integrations (by design).
+- No auth, mock-only government integrations (by design).
+- Multilingual I/O via `POST /translate` (EN/HI/GU). OCR ingestion of scanned FIR images via
+  `POST /ocr` (Tesseract — requires the host binary: `sudo apt-get install -y tesseract-ocr`).
 
 ## Data handling (state this in the pitch)
 

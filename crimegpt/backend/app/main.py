@@ -194,13 +194,43 @@ async def analyze(case_id: UUID):
                VALUES ($1,$2,$3,$4,$5)""",
             case_id, j.indiankanoon_doc_id, j.title, j.relevance, j.tags,
         )
-    await pool().execute("UPDATE cases SET status = $2, updated_at = now() WHERE id = $1",
-                         case_id, result.status)
+    await pool().execute(
+        """UPDATE cases SET status = $2, analysis_confidence = $3,
+           validation_concerns = $4, updated_at = now() WHERE id = $1""",
+        case_id, result.status, result.confidence, result.validation_concerns)
     await _diary(case_id, "analyzed",
                  f"Pipeline run: {len(result.sections)} sections, confidence {result.confidence:.2f}.")
     await audit.record("case.analyze", case_id=case_id,
                        after={"status": result.status, "confidence": result.confidence})
     return result
+
+
+@app.get("/cases/{case_id}/analysis", response_model=AnalyzeResult)
+async def get_analysis(case_id: UUID):
+    """Read-only: return the STORED analysis (facts + sections + judgments) without
+    re-running the LLM pipeline. Use this on load; use POST /analyze to (re)compute."""
+    from .models import SuggestedJudgment, SuggestedSection
+    case = await _get_case_row(case_id)
+    facts_row = await pool().fetchrow("SELECT facts FROM case_facts WHERE case_id = $1", case_id)
+    if facts_row is None:
+        raise HTTPException(404, "not analyzed yet — run POST /cases/{id}/analyze")
+    sec_rows = await pool().fetch(
+        """SELECT code, section_no, heading, old_code_ref, confidence, rationale,
+                  statute_chunk_id, validated
+           FROM suggested_sections WHERE case_id = $1""", case_id)
+    jud_rows = await pool().fetch(
+        "SELECT indiankanoon_doc_id, title, relevance, tags FROM suggested_judgments WHERE case_id = $1",
+        case_id)
+    return AnalyzeResult(
+        case_id=case_id,
+        status=case["status"],
+        confidence=float(case["analysis_confidence"] or 0),
+        review_required=case["status"] == "review_required",
+        facts=ExtractedFacts(**facts_row["facts"]),
+        sections=[SuggestedSection(**dict(r)) for r in sec_rows],
+        judgments=[SuggestedJudgment(**dict(r)) for r in jud_rows],
+        validation_concerns=case["validation_concerns"] or [],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -220,9 +250,14 @@ async def create_document(case_id: UUID, body: DocumentRequest):
 
     case_number = case["case_number"] or str(case_id)
     doc_path = documents.generate(body.type, case_number, facts, sections)
+    # Translate the document BEFORE hashing so the hash matches the delivered file.
+    if body.lang != "en":
+        await translate_mod.translate_docx_file(doc_path, body.lang)
     sha = integrity.sha256_file(doc_path)
     cert_path = doc_path.replace(".docx", "_s63cert.docx")
     integrity.draft_s63_certificate(doc_path, sha, case_number, body.type, cert_path)
+    if body.lang != "en":
+        await translate_mod.translate_docx_file(cert_path, body.lang)
 
     row = await pool().fetchrow(
         """INSERT INTO documents (case_id, type, file_path, sha256, s63_cert_path)
@@ -293,15 +328,16 @@ async def mock_bharatpol_lookup(name: str):
 
 @app.post("/ocr", response_model=OcrResponse)
 async def ocr_ingest(file: UploadFile = File(...), lang: str = "eng"):
-    """OCR a scanned FIR/document image into text (feed the result into POST /cases)."""
+    """Ingest a scanned FIR/document — image (OCR) or PDF (text layer, else OCR) —
+    into text (feed the result into POST /cases)."""
     data = await file.read()
     if not data:
         raise HTTPException(422, "empty file")
     try:
-        text = ocr.extract_text(data, lang=lang)
+        text, source = ocr.extract_text(data, lang=lang)
     except ocr.OcrError as e:
         raise HTTPException(422, str(e))
-    return OcrResponse(text=text, char_count=len(text), lang=lang)
+    return OcrResponse(text=text, char_count=len(text), lang=lang, source=source)
 
 
 @app.post("/translate", response_model=TranslateResponse)

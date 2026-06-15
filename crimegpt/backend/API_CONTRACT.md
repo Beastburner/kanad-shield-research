@@ -203,9 +203,10 @@ certificate, logs `document_generated`, writes audit entry, sets case `documente
 
 **Request**
 ```json
-{ "type": "chargesheet" }
+{ "type": "chargesheet", "lang": "en" }
 ```
 `type` ∈ `"chargesheet"` | `"remand_request"` | `"seizure_receipt"` | `"court_custody_letter"` | `"accused_panchanama"` | `"medical_treatment_letter"` | `"face_identification_form"` (all 7 PS document types).
+`lang` ∈ `"en"` | `"hi"` | `"gu"` (default `"en"`) — generates the .docx in that language. Pass the UI's selected language. Translation is best-effort: if the LLM is unavailable it falls back to English (generation never fails).
 
 **Response `201`**
 ```json
@@ -340,17 +341,19 @@ Errors: `422` (bad lang/empty text), `502` (LLM/translation error).
 
 ## 11b. OCR scanned FIR — `POST /ocr`  (multipart)
 
-Extract text from a scanned FIR / document **image** (PNG/JPG/TIFF) so officers can
-ingest paper documents. Send as `multipart/form-data` with a `file` field; optional
-`lang` query param (`eng` default; `hin`, `guj`, or `eng+hin` if the language pack is
-installed). Pipe the returned `text` into `POST /cases` as the `fir_narrative`.
+Extract text from a scanned FIR / document — **image** (PNG/JPG/TIFF) or **PDF** —
+so officers can ingest paper documents. Digital PDFs use the embedded text layer
+(exact); scanned PDFs and images are OCR'd. Send as `multipart/form-data` with a
+`file` field; optional `lang` query param (`eng` default; `hin`, `guj`, or `eng+hin`
+if the language pack is installed). Pipe the returned `text` into `POST /cases`.
 
-**Request** — `multipart/form-data`, field `file=<image>`; e.g. `POST /ocr?lang=eng`
+**Request** — `multipart/form-data`, field `file=<image|pdf>`; e.g. `POST /ocr?lang=eng`
 
 **Response `200`**
 ```json
-{ "text": "On 12 June 2026 ... CCTV footage is available.", "char_count": 412, "lang": "eng" }
+{ "text": "On 12 June 2026 ... CCTV footage is available.", "char_count": 412, "lang": "eng", "source": "pdf_text" }
 ```
+`source` ∈ `"image_ocr"` | `"pdf_text"` (digital PDF) | `"pdf_ocr"` (scanned PDF).
 Errors: `422` (empty/unreadable file, or Tesseract binary not installed on host).
 
 **Frontend use:** on the New Case screen, an "Upload scanned FIR" control → `POST /ocr` →

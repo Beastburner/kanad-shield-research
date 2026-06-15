@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { renderAsync } from 'docx-preview';
 import {
   Box,
   Button,
@@ -22,7 +23,10 @@ import {
   ListItemText,
   IconButton,
   Paper,
-  Tooltip
+  Tooltip,
+  Dialog,
+  DialogTitle,
+  DialogContent
 } from '@mui/material';
 import {
   ArrowLeft,
@@ -38,7 +42,9 @@ import {
   FileCheck,
   Languages,
   ShieldAlert,
-  Fingerprint
+  Fingerprint,
+  Eye,
+  X
 } from 'lucide-react';
 import { api, type Case, type FactsBlob, type LegalSection, type Judgment, type DocumentResponse, type DiaryEvent } from '../api';
 
@@ -155,6 +161,61 @@ export default function CaseWorkspace() {
   const [bpResult, setBpResult] = useState<any>(null);
   const [bpLoading, setBpLoading] = useState(false);
 
+  // Quick Translation Tool
+  const [transInput, setTransInput] = useState('');
+  const [transOutput, setTransOutput] = useState<string | null>(null);
+  const [transLoading, setTransLoading] = useState(false);
+
+  const handleQuickTranslate = async (target: 'hi' | 'gu') => {
+    if (!transInput.trim()) return;
+    try {
+      setTransLoading(true);
+      setTransOutput(null);
+      const res = await api.translateText(transInput, target);
+      setTransOutput(res.text);
+    } catch (err) {
+      console.error('Translation failed', err);
+      setTransOutput('Translation failed.');
+    } finally {
+      setTransLoading(false);
+    }
+  };
+
+  // In-browser document viewer (renders the generated .docx without downloading)
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerTitle, setViewerTitle] = useState('');
+  const [viewerLoading, setViewerLoading] = useState(false);
+  const [viewerBlob, setViewerBlob] = useState<Blob | null>(null);
+  const viewerRef = useRef<HTMLDivElement>(null);
+
+  const openViewer = async (docId: string, kind: 'file' | 'certificate', title: string) => {
+    setViewerOpen(true);
+    setViewerTitle(title);
+    setViewerLoading(true);
+    setViewerBlob(null);
+    try {
+      const blob = await api.fetchDocumentBlob(docId, kind);
+      setViewerBlob(blob);
+    } catch (err) {
+      console.error('Failed to load document for preview', err);
+      setError('Could not load document preview.');
+      setViewerOpen(false);
+    } finally {
+      setViewerLoading(false);
+    }
+  };
+
+  // Render the .docx into the dialog once both the blob and the container exist.
+  useEffect(() => {
+    if (viewerOpen && viewerBlob && viewerRef.current) {
+      viewerRef.current.innerHTML = '';
+      renderAsync(viewerBlob, viewerRef.current, undefined, {
+        className: 'docx-view',
+        inWrapper: true,
+      }).catch((e) => console.error('docx render failed', e));
+    }
+  }, [viewerOpen, viewerBlob]);
+
   // Errors / Success Messages
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -198,18 +259,21 @@ export default function CaseWorkspace() {
         }
       }
 
-      // If analyzed, we can rebuild the sections and judgments list by calling analyze endpoint (or standard fetch, but since backend stores it, let's call analyze once to populate if status is analyzed)
+      // If already analyzed, load the STORED analysis (read-only — does NOT re-run the
+      // LLM pipeline, so no extra cost and no duplicate "analyzed" diary entries).
       if (caseData.status === 'analyzed' || caseData.status === 'review_required' || caseData.status === 'documented') {
-        // Run analyze passively to get the stored analysis without creating side-effects, or call it again.
-        // The /analyze endpoint is idempotent and returns saved findings.
-        const analysisData = await api.analyzeCase(id);
-        setSections(analysisData.sections || []);
-        setJudgments(analysisData.judgments || []);
-        setAnalysisConfidence(analysisData.confidence || 0);
-        setReviewRequired(analysisData.review_required || false);
-        setValidationConcerns(analysisData.validation_concerns || []);
-        if (analysisData.disclaimer) {
-          setDisclaimer(analysisData.disclaimer);
+        try {
+          const analysisData = await api.getAnalysis(id);
+          setSections(analysisData.sections || []);
+          setJudgments(analysisData.judgments || []);
+          setAnalysisConfidence(analysisData.confidence || 0);
+          setReviewRequired(analysisData.review_required || false);
+          setValidationConcerns(analysisData.validation_concerns || []);
+          if (analysisData.disclaimer) {
+            setDisclaimer(analysisData.disclaimer);
+          }
+        } catch (err) {
+          console.error('Error fetching stored analysis', err);
         }
       }
 
@@ -286,8 +350,9 @@ export default function CaseWorkspace() {
       setGeneratingDoc(type);
       setError(null);
       setSuccess(null);
-      await api.generateDocument(id, type);
-      setSuccess(`Document '${type}' generated successfully!`);
+      await api.generateDocument(id, type, i18n.language);
+      const langName = i18n.language === 'hi' ? 'Hindi' : i18n.language === 'gu' ? 'Gujarati' : 'English';
+      setSuccess(`Document '${type}' generated in ${langName}!`);
       
       // Update Case Object Status to 'documented'
       const updatedCase = await api.getCase(id);
@@ -846,9 +911,12 @@ export default function CaseWorkspace() {
                     <Typography variant="h6" sx={{ fontWeight: 700, mb: 2 }}>
                       Draft Court Documents
                     </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
                       Automate document preparation. Generated templates prefill all active case facts.
                     </Typography>
+                    <Alert severity="info" icon={<Languages size={16} />} sx={{ mb: 3, py: 0.5 }}>
+                      Output language: <strong>{i18n.language === 'hi' ? 'हिन्दी (Hindi)' : i18n.language === 'gu' ? 'ગુજરાતી (Gujarati)' : 'English'}</strong> — switch it from the header language selector.
+                    </Alert>
 
                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                       {documentTypes.map((doc, idx) => (
@@ -913,10 +981,32 @@ export default function CaseWorkspace() {
                               </Tooltip>
                             </Box>
 
-                            <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}>
+                            <Box sx={{ display: 'flex', gap: 1.5, mb: 2, flexWrap: 'wrap' }}>
+                              <Button
+                                id={`btn-view-doc-${doc.id}`}
+                                variant="contained"
+                                size="small"
+                                color="primary"
+                                onClick={() => openViewer(doc.id, 'file', doc.type.replace(/_/g, ' '))}
+                                startIcon={<Eye size={14} />}
+                              >
+                                View
+                              </Button>
+
+                              <Button
+                                id={`btn-view-cert-${doc.id}`}
+                                variant="text"
+                                size="small"
+                                color="primary"
+                                onClick={() => openViewer(doc.id, 'certificate', `${doc.type.replace(/_/g, ' ')} — s.63 Certificate`)}
+                                startIcon={<Eye size={14} />}
+                              >
+                                View Certificate
+                              </Button>
+
                               <Button
                                 id={`btn-download-doc-${doc.id}`}
-                                variant="contained"
+                                variant="outlined"
                                 size="small"
                                 color="secondary"
                                 component="a"
@@ -1089,12 +1179,36 @@ export default function CaseWorkspace() {
                         rows={3}
                         id="trans-input"
                         placeholder="Type text to translate..."
-                        // We can mock translate using the state
+                        value={transInput}
+                        onChange={(e) => setTransInput(e.target.value)}
                       />
                       <Box sx={{ display: 'flex', gap: 1.5 }}>
-                        <Button variant="outlined" size="small" fullWidth>To Hindi</Button>
-                        <Button variant="outlined" size="small" fullWidth>To Gujarati</Button>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          fullWidth
+                          disabled={!transInput.trim() || transLoading}
+                          startIcon={transLoading ? <CircularProgress size={12} /> : <Languages size={12} />}
+                          onClick={() => handleQuickTranslate('hi')}
+                        >
+                          To Hindi
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          fullWidth
+                          disabled={!transInput.trim() || transLoading}
+                          startIcon={transLoading ? <CircularProgress size={12} /> : <Languages size={12} />}
+                          onClick={() => handleQuickTranslate('gu')}
+                        >
+                          To Gujarati
+                        </Button>
                       </Box>
+                      {transOutput && (
+                        <Box sx={{ bgcolor: 'rgba(6, 182, 212, 0.05)', p: 1.5, borderRadius: 1.5, borderLeft: '3px solid #06b6d4' }}>
+                          <Typography variant="body2">{transOutput}</Typography>
+                        </Box>
+                      )}
                     </Box>
                   </CardContent>
                 </Card>
@@ -1103,6 +1217,26 @@ export default function CaseWorkspace() {
           )}
         </Box>
       )}
+
+      {/* In-browser document viewer */}
+      <Dialog open={viewerOpen} onClose={() => setViewerOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', textTransform: 'capitalize', pr: 1 }}>
+          {viewerTitle || 'Document'}
+          <IconButton onClick={() => setViewerOpen(false)} size="small" sx={{ color: 'text.secondary' }}>
+            <X size={18} />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent dividers sx={{ bgcolor: '#e5e7eb', minHeight: 400 }}>
+          {viewerLoading && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 8, gap: 2 }}>
+              <CircularProgress size={28} />
+              <Typography sx={{ color: '#374151' }}>Loading document preview…</Typography>
+            </Box>
+          )}
+          {/* docx-preview renders the .docx into this container (white "paper" on grey) */}
+          <Box ref={viewerRef} sx={{ display: viewerLoading ? 'none' : 'block', '& .docx-wrapper': { background: 'transparent', padding: 0 } }} />
+        </DialogContent>
+      </Dialog>
     </Box>
   );
 }

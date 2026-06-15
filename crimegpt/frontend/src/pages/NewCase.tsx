@@ -91,7 +91,9 @@ export default function NewCase() {
       setError(null);
       const ocrResult = await api.ocrScannedFIR(file, 'eng');
       setFirNarrative(ocrResult.text);
-      setSuccessMsg(`OCR Success: Extracted ${ocrResult.char_count} characters.`);
+      const how = ocrResult.source === 'pdf_text' ? 'PDF text layer'
+        : ocrResult.source === 'pdf_ocr' ? 'scanned PDF (OCR)' : 'image (OCR)';
+      setSuccessMsg(`Extracted ${ocrResult.char_count} characters from ${how}.`);
       setTimeout(() => setSuccessMsg(null), 3000);
     } catch (err: any) {
       console.error(err);
@@ -218,10 +220,10 @@ export default function NewCase() {
                       type="file"
                       ref={fileInputRef}
                       style={{ display: 'none' }}
-                      accept="image/*"
+                      accept="image/*,application/pdf"
                       onChange={handleOcrFileChange}
                     />
-                    
+
                     <Button
                       id="btn-ocr-fir"
                       variant="outlined"
@@ -232,7 +234,7 @@ export default function NewCase() {
                       fullWidth
                       sx={{ height: 44, justifyContent: 'flex-start', px: 2 }}
                     >
-                      {uploadingOcr ? 'Parsing OCR...' : t('uploadScannedFIR')}
+                      {uploadingOcr ? 'Parsing FIR...' : t('uploadScannedFIR')}
                     </Button>
                   </Box>
                 </CardContent>

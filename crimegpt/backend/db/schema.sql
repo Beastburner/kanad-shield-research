@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS cases (
     case_number   TEXT UNIQUE,
     status        TEXT NOT NULL DEFAULT 'new',   -- new | analyzed | review_required | documented
     fir_narrative TEXT NOT NULL,
+    analysis_confidence NUMERIC(4,3),             -- overall confidence from the last analyze run
+    validation_concerns JSONB,                    -- validator concerns from the last analyze run
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
