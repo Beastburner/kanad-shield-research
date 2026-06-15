@@ -3,7 +3,11 @@
 Tick these before the pitch. Each maps to an explicit scoring criterion.
 
 ## Legal Accuracy
-- [ ] All section references use **BNS / BNSS / BSA** (zero IPC/CrPC).
+- [ ] **Charging** sections are **BNS / BNSS / BSA** (the laws in force) — never an IPC/CrPC
+      section as the charge.
+- [ ] Each section ALSO shows its repealed **IPC/CrPC/Evidence-Act cross-reference**
+      ("cf. IPC 379"), clearly labelled as the old equivalent — **the PS explicitly requires
+      this** ("Cross-referenced IPC/CrPC/Evidence Act provisions where needed").
 - [ ] Legal suggestions retrieved from real statute text (indiacode.nic.in), not model recall.
 - [ ] Case-law suggestions are real Indian Kanoon results (no fabricated judgments).
 - [ ] Pre-tested classifier on **10 real crime scenarios** before the event.

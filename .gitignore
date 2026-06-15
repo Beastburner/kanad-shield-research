@@ -12,9 +12,13 @@ __pycache__/
 venv/
 .venv/
 
+# Generated artifacts (CrimeGPT .docx + s.63 certificates)
+crimegpt/backend/artifacts/
+
 # Node
 node_modules/
 dist/
-
+CLAUDE.md
 # OS
 .DS_Store
+test.md

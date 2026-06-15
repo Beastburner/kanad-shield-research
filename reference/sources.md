@@ -45,8 +45,28 @@ All URLs pulled during research (15 June 2026).
 - ncpcr.gov.in/pocso-act
 - nimhanschildprotect.in: mandatory reporting guidelines
 
+## Police Document Formats (BNSS)
+- BNSS s.193 final report: drishtijudiciary.com/current-affairs/section-193-of-bnss
+- s.193(3) electronic chain of custody: livelaw.in/articles/chain-of-custody-under-section-193-bnss-explained-519454
+- Charge-sheet under BNSS format: lawsikho.com/blog/charge-sheet-under-bnss-format-procedure-guide/
+- BNSS s.187 remand/custody: jurigram.com/advocates/resources/new-laws/section-187-bnss-remand-police-custody-period
+- BNSS s.105 audio-video search/seizure: livelaw.in/articles/recording-of-search-and-seizure-electronic-mode-section-105-bnss-281366
+- BNSS s.105–109 searches: thelegalquotient.com/criminal-laws/bharatiya-nagarik-suraksha-sanhita/miscellaneous-provisions-relating-to-searches-ss-105-to-109-bnss/
+
+## BNS Section Numbers (verified)
+- NCRB BNS compendium index: cytrain.ncrb.gov.in/staticpage/web_pages/IndexBNS.html
+- India Code BNS (official): indiacode.nic.in/handle/123456789/20062
+- India Code BNSS (official): indiacode.nic.in/handle/123456789/20340
+- BPRD BNS handbook PDF: bprd.nic.in/uploads/pdf/BNS_English_30-04-2024.pdf
+- BNS Ch.17 bare act: onlinelawconnect.com/actsandrules/criminal/bns/chp17.php
+- Devgan BNS sections: devgan.in/bns/section/115/ , /117/ , /131/ , /351/
+- Cyber crimes under BNS + IT Act 66C/66D: lawsection.in/cyber-crimes-under-bharatiya-nyaya-sanhita-2023-bns/
+
 ## Digital Evidence (BSA s.63)
 - livelaw.in: e-evidence under BSA 2023
+- BSA s.63 four conditions: obiter.in/section-63-of-the-bsa/
+- s.63 certificate template Part A & B: chat2evidence.in/public/pages/section-63-bsa-certificate-template
+- Part B expert eligibility: biharwatch.in/2026/05/any-individual-possessing-special.html
 - drishtijudiciary.com: electronic evidence under BSA
 - gcatg.org / corpotechlegal.com: s.63 certificate + hash value
 - bhattandjoshiassociates.com: s.63 + SC interpretation

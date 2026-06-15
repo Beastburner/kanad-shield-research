@@ -1,7 +1,12 @@
 # Research — India's New Criminal Law Framework (BNS / BNSS / BSA)
 
-> CRITICAL: India replaced its entire criminal law in July 2024. If our demo references
-> IPC/CrPC, we lose credibility instantly with a police-officer judge. Everything = BNS/BNSS/BSA.
+> CRITICAL: India replaced its entire criminal law in July 2024. The **charging** sections in
+> our demo must be BNS/BNSS/BSA — never an IPC/CrPC section as the charge.
+> CORRECTION (per the official PS): the PS explicitly asks for "Cross-referenced IPC/CrPC/
+> Evidence Act provisions where needed." So we DO show the old-code equivalent alongside each
+> new-code section (e.g. BNS 303 · cf. IPC 379), clearly labelled as the repealed equivalent —
+> useful for officers trained on IPC and for old case-law lookup. Primary = new codes;
+> IPC/CrPC = labelled cross-reference only.
 
 ---
 
@@ -53,3 +58,61 @@
   (bare acts of BNS/BNSS/BSA). Use as ground-truth corpus.
 - **Ministry of Home Affairs** — mha.gov.in/en/commoncontent/new-criminal-laws.
 - **PIB** highlights of new criminal laws (press releases).
+
+---
+
+## Data Pipeline Notes (for the RAG build)
+
+### (a) Getting machine-parseable bare-act text from India Code
+- **Official portal:** indiacode.nic.in. Each act has a stable "handle" landing page that lists
+  sections (hyperlinked, section-wise) plus a downloadable **PDF** of the full act.
+  - BNS 2023: https://www.indiacode.nic.in/handle/123456789/20062
+    (full-act PDF: https://www.indiacode.nic.in/bitstream/123456789/20062/1/a202345.pdf)
+  - BNSS 2023: https://www.indiacode.nic.in/handle/123456789/20340
+  - BSA 2023: browse from indiacode.nic.in (search "Bharatiya Sakshya Adhiniyam, 2023").
+- **Format reality:** India Code serves **PDF (authoritative)** + an HTML section-browse view.
+  There is **no clean public JSON/REST API** for the bare-act text. So the ingestion pipeline is:
+  download the official PDF → extract text (pdfplumber / PyMuPDF; the BNS/BNSS/BSA PDFs are
+  text-based, not scanned, so OCR is usually NOT needed) → **regex-split on the section-number
+  pattern** (e.g. `^\d+\.` / "Section NNN") → store one chunk per section with metadata
+  `{act, section_no, heading, text}` → embed into pgvector.
+- ⚠️ Cite the **official India Code PDF** as ground truth; avoid "shadow PDFs" (unofficial
+  copies with typos / bill-stage text). Source on shadow-PDF risk:
+  https://jurigram.com/advocates/resources/new-laws/bare-act-bns-bnss-bsa-free-download
+
+### (b) Indian Kanoon API (for judgments)
+- **Docs:** https://api.indiankanoon.org/documentation/ · **Pricing:** https://api.indiankanoon.org/pricing/
+- **Signup credit:** **₹500** free on signup to develop/test. Non-commercial use cases can get
+  **₹10,000/month free** but require **use-case verification by the admin — apply now** (lead
+  time). (Confirms README figures.)
+- **Endpoints (4):** `/search/` (query → result list), `/doc/` (full document by doc-id),
+  `/docfragment/` (matching text fragments for a query within a doc), `/docmeta/` (metadata).
+  Results in **JSON or XML** (set via HTTP `Accept` header). Auth uses a public/private-key
+  signed-request scheme (you sign requests server-side and POST to api.indiankanoon.org).
+- **What it returns / reuse:** structured judgment data including paragraph classification,
+  citation classification, and AI tags — reuse these for the "suggested judgments" feature
+  rather than building our own classifier.
+
+### (c) Recommended embedding model for Indian legal EN/HI text (RAG)
+- **Primary: `BAAI/bge-m3`** — multilingual (handles Hindi + English + code-mixed), strong
+  retrieval, supports long chunks (good for full section text). Justification: BNS/BNSS/BSA
+  corpus is English bare-act text but officer narratives will be Hindi/Gujarati-influenced
+  English; bge-m3's multilingual retrieval avoids the English-only ceiling.
+- **Domain fallback / re-rank: `law-ai/InLegalBERT`** — pretrained on ~5.4M Indian legal docs,
+  best for Indian-statute semantics, **but English-only** (weak on Hindi). Use as an
+  English-only embedder or a domain re-ranker layered on bge-m3 retrieval.
+  - Source: https://huggingface.co/law-ai/InLegalBERT
+- Research note: in legal RAG the **embedding model choice dominates** end-to-end quality
+  (more than the LLM), so this is worth getting right.
+  - Source: https://milvus.io/ai-quick-reference/what-types-of-embedding-models-are-best-for-legal-documents
+- ⚠️ Both are open-weight (self-host, no per-call cost) — good for offline/police-network demo.
+  If GPU is unavailable at the venue, fall back to a hosted embedding API but pre-compute the
+  statute embeddings offline so the live demo doesn't depend on connectivity.
+
+### Sources (data pipeline)
+- India Code BNS handle: https://www.indiacode.nic.in/handle/123456789/20062
+- India Code BNSS handle: https://www.indiacode.nic.in/handle/123456789/20340
+- Indian Kanoon API docs: https://api.indiankanoon.org/documentation/
+- Indian Kanoon API pricing: https://api.indiankanoon.org/pricing/
+- InLegalBERT: https://huggingface.co/law-ai/InLegalBERT
+- Legal-embedding guidance: https://milvus.io/ai-quick-reference/what-types-of-embedding-models-are-best-for-legal-documents

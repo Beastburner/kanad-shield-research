@@ -1,0 +1,26 @@
+# Postgres 16 with the pgvector extension preinstalled.
+# Brings up the DB only — run the FastAPI app on the host (see README).
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: crimegpt-db
+    environment:
+      POSTGRES_USER: crimegpt
+      POSTGRES_PASSWORD: crimegpt
+      POSTGRES_DB: crimegpt
+    ports:
+      - "5432:5432"
+    volumes:
+      - crimegpt_pgdata:/var/lib/postgresql/data
+      # schema.sql then seed.sql are applied automatically on first boot of a
+      # fresh volume (alphabetical order). Re-seed manually if the volume exists.
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./db/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crimegpt -d crimegpt"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  crimegpt_pgdata:
