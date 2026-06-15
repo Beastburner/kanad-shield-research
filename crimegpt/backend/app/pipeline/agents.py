@@ -174,15 +174,16 @@ async def run_pipeline(case_id, narrative: str) -> AnalyzeResult:
     review_required = confidence < settings.confidence_threshold or not sections
     status = "review_required" if review_required else "analyzed"
 
-    judgments_raw = await retrieval.retrieve_judgments(_facts_to_query(facts), k=3)
+    jquery = _judgment_query(facts, sections)
+    judgments_raw = await retrieval.retrieve_judgments(jquery, k=3)
     judgments = [
         SuggestedJudgment(
             indiankanoon_doc_id=j["indiankanoon_doc_id"],
             title=j.get("title"),
-            relevance=confidence,  # cache match -> reuse pipeline confidence
+            relevance=_judgment_relevance(jquery, j, rank=i),
             tags=j.get("tags") or [],
         )
-        for j in judgments_raw
+        for i, j in enumerate(judgments_raw)
     ]
 
     concerns = list(verdict.concerns)
@@ -206,3 +207,23 @@ def _facts_to_query(facts: ExtractedFacts) -> str:
     if facts.location:
         parts.append(facts.location)
     return " ".join(parts) or "criminal offence"
+
+
+def _judgment_query(facts: ExtractedFacts, sections: list[SuggestedSection]) -> str:
+    """Judgment search query. Lead with the CHARGED offence headings (e.g.
+    'Extortion') so the case-law search targets the offence, not incidental
+    narrative words like 'FIR' or 'complaint' that match any case."""
+    parts = [s.heading for s in sections if s.heading]
+    parts += facts.events + facts.items
+    return " ".join(parts) or "criminal offence"
+
+
+def _judgment_relevance(query: str, j: dict, rank: int) -> float:
+    """Honest, differentiated relevance: lexical overlap between the query and the
+    judgment's title/summary/tags, blended with rank order (no fake flat score)."""
+    qterms = set(re.findall(r"[a-z]{4,}", query.lower()))
+    jtext = " ".join(filter(None, [j.get("title"), j.get("summary"), *(j.get("tags") or [])]))
+    jterms = set(re.findall(r"[a-z]{4,}", jtext.lower()))
+    overlap = len(qterms & jterms) / len(qterms) if qterms else 0.0
+    rank_score = max(0.0, 1.0 - 0.15 * rank)
+    return round(min(0.99, 0.5 * rank_score + 0.5 * min(1.0, overlap * 3)), 2)

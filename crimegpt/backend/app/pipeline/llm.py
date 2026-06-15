@@ -76,7 +76,8 @@ async def complete_json(system: str, user: str, schema: Type[T]) -> T:
 
     resp = await _create(
         model=settings.groq_model,
-        temperature=0.1,
+        temperature=0,   # deterministic: borderline cases shouldn't flip across the
+                         # confidence threshold on re-run (same FIR -> same verdict)
         response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": system_full},

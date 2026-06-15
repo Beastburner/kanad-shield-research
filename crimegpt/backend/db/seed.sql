@@ -340,5 +340,11 @@ INSERT INTO judgments_cache (indiankanoon_doc_id, title, summary, tags) VALUES
  ARRAY['electronic evidence','CCTV','certificate','possession']),
 ('IK-1000014', 'State v. Accused (dowry death — s.304B presumption)',
  'Death within seven years of marriage with proof of cruelty soon before death raises the statutory presumption of dowry death.',
- ARRAY['dowry death','304B','presumption','cruelty','married woman'])
+ ARRAY['dowry death','304B','presumption','cruelty','married woman']),
+('IK-1000015', 'State v. Accused (extortion — demand of money with threat)',
+ 'Demand of money or property coupled with putting the victim in fear of injury or wrongful loss satisfies the offence of extortion; delivery of property pursuant to the threat discussed.',
+ ARRAY['extortion','threat','demand','money','property','bribe']),
+('IK-1000016', 'State v. Public Servant (bribery / illegal gratification)',
+ 'Public servant demanding or accepting illegal gratification to perform or withhold an official act; corroboration, demand and recovery discussed under the Prevention of Corruption Act read with extortion principles.',
+ ARRAY['bribery','corruption','public servant','illegal gratification','demand','PC Act','extortion'])
 ON CONFLICT DO NOTHING;
