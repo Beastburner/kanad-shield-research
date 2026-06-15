@@ -1069,7 +1069,7 @@ export default function CaseWorkspace() {
                                   {doc.superseded
                                     ? <Chip label="superseded" size="small" sx={{ height: 20, bgcolor: 'rgba(148,163,184,0.15)', color: '#94a3b8' }} />
                                     : <Chip label="current" size="small" sx={{ height: 20, bgcolor: 'rgba(16,185,129,0.15)', color: '#10b981' }} />}
-                                  <Chip label={doc.lang.toUpperCase()} size="small" variant="outlined" sx={{ height: 20, color: 'text.secondary' }} />
+                                  <Chip label={(doc.lang || 'en').toUpperCase()} size="small" variant="outlined" sx={{ height: 20, color: 'text.secondary' }} />
                                 </Box>
                                 <Typography variant="caption" color="text.secondary">
                                   Generated: {new Date(doc.generated_at).toLocaleString()}
