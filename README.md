@@ -80,3 +80,4 @@ Our edge is walking in and speaking their language:
 
 _Last compiled: 15 June 2026. All research current as of this date._
 # kanad-shield-research
+# kanad-shield-research
