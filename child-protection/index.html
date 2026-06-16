@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CyberRakshak Kids - Ahmedabad Cyber Crime Cell Initiative</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <!-- Google Fonts: Outfit and Inter for futuristic security aesthetics -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@500;700;900&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+    }
+    h1, h2, h3, h4, .brand-logo, .score-number, .sos-btn {
+      font-family: 'Outfit', sans-serif;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Global App Header -->
+  <header class="app-header">
+    <div class="brand-section">
+      <div class="brand-logo">🛡️</div>
+      <div class="brand-title">
+        <h1>CYBERRAKSHAK KIDS</h1>
+        <p>AHMEDABAD CYBER CRIME BRANCH INITIATIVE</p>
+      </div>
+    </div>
+
+    <!-- Universal Role Switcher (Simulates login switcher for testing the complete ecosystem) -->
+    <div class="role-selector">
+      <button class="role-btn active" data-role="child">👦 Child Portal</button>
+      <button class="role-btn" data-role="parent">👨‍👩- Parent Portal</button>
+      <button class="role-btn" data-role="police">👮 Police Console</button>
+    </div>
+  </header>
+
+  <!-- Main Dashboard Container -->
+  <main class="app-content">
+
+    <!-- ================================================== -->
+    <!-- 1. CHILD DASHBOARD VIEW -->
+    <!-- ================================================== -->
+    <section id="child-dashboard" class="dashboard-view active">
+      <div class="profile-pill-wrapper">
+        <span style="display: flex; align-items: center; font-size: 0.8rem; color: var(--text-dark); margin-right: 0.5rem; font-weight: 700;">ACTIVE PROFILE:</span>
+        <button class="profile-pill active" data-id="child_1" onclick="selectProfile('child_1')">👦 Aarav Patel (14 yrs)</button>
+        <button class="profile-pill" data-id="child_2" onclick="selectProfile('child_2')">👧 Priyanshi Shah (11 yrs)</button>
+        <button class="profile-pill" data-id="child_3" onclick="selectProfile('child_3')">👦 Rohan Mehta (15 yrs)</button>
+      </div>
+
+      <div class="dashboard-grid">
+        <!-- Left: Safety Score and Emergency SOS -->
+        <div class="col-4">
+          <!-- Safety Score Gauge Card -->
+          <div class="cyber-card mb-4">
+            <div class="card-header">
+              <span class="card-title">🛡️ Safety Score</span>
+            </div>
+            <div class="score-gauge-container">
+              <div class="score-radial">
+                <svg viewBox="0 0 160 160">
+                  <circle class="score-circle-bg" cx="80" cy="80" r="70"></circle>
+                  <circle id="child-radial-bar" class="score-circle-bar" cx="80" cy="80" r="70"></circle>
+                </svg>
+                <div class="score-text-overlay">
+                  <div id="child-score-number" class="score-number">88</div>
+                  <div class="score-lbl">Score</div>
+                </div>
+              </div>
+              <div id="child-score-text" class="score-interpretation">SAFE</div>
+            </div>
+            <p style="font-size: 0.8rem; color: var(--text-muted); text-align: center; line-height: 1.4; padding: 0 0.5rem;">
+              Higher score means safer digital behavior. Keep scanning suspicious chats to keep it high!
+            </p>
+          </div>
+
+          <!-- Emergency SOS Card -->
+          <div class="cyber-card accent-red">
+            <div class="card-header">
+              <span class="card-title" style="color: var(--accent-red);">🚨 Emergency Panic SOS</span>
+            </div>
+            <div class="sos-container">
+              <div class="sos-button-wrapper">
+                <div class="sos-pulse-ring"></div>
+                <button class="sos-btn" id="sos-trigger-btn" onclick="triggerSOSWorkflow()">
+                  SOS
+                  <span class="sos-subtext">CLICK TO ALERT</span>
+                </button>
+              </div>
+              <p style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;">
+                <strong>IN DANGER?</strong> Click this button to instantly notify your parents and dispatch the nearest Ahmedabad Police Cyber Unit.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Center/Right: Threat Scanner & Learning Center -->
+        <div class="col-8">
+          <!-- Threat Scanner -->
+          <div class="cyber-card mb-4">
+            <div class="card-header">
+              <span class="card-title">🔍 AI Chat & Threat Scanner</span>
+              <span class="card-subtitle">Agent 1: Threat Detection</span>
+            </div>
+            
+            <div class="scan-area">
+              <p style="font-size: 0.85rem; color: var(--text-muted);">
+                Receive a strange chat, message, or link? Paste it below to analyze if it contains Cyberbullying, Online Grooming, or Scams.
+              </p>
+              
+              <div class="scan-templates">
+                <span style="font-size: 0.75rem; color: var(--text-dark); display: flex; align-items: center; font-weight: 700;">DEMO CLICKS:</span>
+                <div id="scan-templates-badges" class="scan-templates"></div>
+              </div>
+              
+              <textarea id="scanner-textarea" class="scan-textarea" placeholder="Paste your message, SMS, social media chat, or URL here..."></textarea>
+              
+              <div class="scan-actions">
+                <button class="btn-cyber" onclick="executeScan()">⚡ Scan with Rakshak AI</button>
+              </div>
+            </div>
+
+            <!-- Scanner Result Panel (Hidden by default) -->
+            <div id="scan-result-wrapper" class="scan-result-panel">
+              <div class="scan-result-header">
+                <span style="font-weight: 800; font-size: 1rem; display: flex; align-items: center; gap: 0.5rem; color: #fff;">
+                  ⚙️ Scanner Diagnosis
+                </span>
+                <span id="result-severity-badge" class="badge">Safe</span>
+              </div>
+              <div class="scan-result-body">
+                <p><strong>Threat Category:</strong> <span id="result-category" style="color: var(--accent-blue); font-weight: 700;">None</span></p>
+                <p><strong>Threat Intensity Score:</strong> <span id="result-score" style="font-weight: 700;">0%</span></p>
+                <div id="result-snippets-box" style="display: none;"></div>
+                <p><strong>Heuristic Reasoning:</strong> <span id="result-reasoning" style="color: var(--text-muted);">No threat patterns found.</span></p>
+                <p style="margin-bottom: 0;"><strong>Mitigation Actions:</strong> <span id="result-actions" style="color: var(--accent-green); font-weight: 600;">N/A</span></p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Safety Learning Center & Alerts -->
+          <div class="dashboard-grid">
+            <div class="col-6">
+              <div class="cyber-card">
+                <div class="card-header">
+                  <span class="card-title">📚 Safety Learning Center</span>
+                </div>
+                <div id="learning-cards-container" class="lc-grid">
+                  <!-- JS Injection -->
+                </div>
+              </div>
+            </div>
+
+            <div class="col-6">
+              <div class="cyber-card">
+                <div class="card-header">
+                  <span class="card-title">🔔 Recent Profile Alerts</span>
+                </div>
+                <div id="child-alerts-container" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                  <!-- JS Injection -->
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================== -->
+    <!-- 2. PARENT DASHBOARD VIEW -->
+    <!-- ================================================== -->
+    <section id="parent-dashboard" class="dashboard-view">
+      <!-- Shared Profile selection -->
+      <div class="profile-pill-wrapper">
+        <span style="display: flex; align-items: center; font-size: 0.8rem; color: var(--text-dark); margin-right: 0.5rem; font-weight: 700;">SELECT CHILD PROFILE:</span>
+        <button class="profile-pill active" data-id="child_1" onclick="selectProfile('child_1')">👦 Aarav Patel</button>
+        <button class="profile-pill" data-id="child_2" onclick="selectProfile('child_2')">👧 Priyanshi Shah</button>
+        <button class="profile-pill" data-id="child_3" onclick="selectProfile('child_3')">👦 Rohan Mehta</button>
+      </div>
+
+      <div class="dashboard-grid">
+        <!-- Left Sidebar: Child Safety Status -->
+        <div class="col-4">
+          <!-- Safety score circle -->
+          <div class="cyber-card mb-4">
+            <div class="card-header">
+              <span class="card-title">📊 Safety Index Summary</span>
+            </div>
+            <div class="score-gauge-container">
+              <div class="score-radial">
+                <svg viewBox="0 0 160 160">
+                  <circle class="score-circle-bg" cx="80" cy="80" r="70"></circle>
+                  <circle id="parent-radial-bar" class="score-circle-bar" cx="80" cy="80" r="70"></circle>
+                </svg>
+                <div class="score-text-overlay">
+                  <div id="parent-score-number" class="score-number">88</div>
+                  <div class="score-lbl">Score</div>
+                </div>
+              </div>
+              <div id="parent-score-text" class="score-interpretation">SECURE</div>
+            </div>
+          </div>
+
+          <!-- Total Incidents and statistics box -->
+          <div class="cyber-card mb-4">
+            <div class="card-header">
+              <span class="card-title">📈 Statistics & Activity</span>
+            </div>
+            <div class="stat-pill-grid mb-4">
+              <div class="stat-box">
+                <div id="p-stat-total" class="stat-value blue-text">0</div>
+                <div class="stat-label">Total Incidents</div>
+              </div>
+              <div class="stat-box">
+                <div id="p-stat-critical" class="stat-value red-text">0</div>
+                <div class="stat-label">Critical Alerts</div>
+              </div>
+            </div>
+            <p style="font-size: 0.75rem; color: var(--text-dark); text-align: center; margin-bottom: 0;">
+              Calculations updated in real-time by Agent 2 (Risk Assessment).
+            </p>
+          </div>
+
+          <!-- Recommended Actions list -->
+          <div class="cyber-card">
+            <div class="card-header">
+              <span class="card-title">💡 Actionable Guidelines</span>
+            </div>
+            <div id="parent-recommendations" class="recommendation-list">
+              <!-- JS Loaded items -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Side: Risk Alerts & Log Tables -->
+        <div class="col-8">
+          <!-- Real time alert console -->
+          <div class="cyber-card mb-4 accent-red">
+            <div class="card-header">
+              <span class="card-title" style="color: var(--accent-red);">⚠️ Real-time Threat & SOS Feed</span>
+            </div>
+            <div id="parent-notif-container" class="notification-scroller">
+              <!-- JS Loaded notifications -->
+            </div>
+          </div>
+
+          <!-- Incident history table -->
+          <div class="cyber-card">
+            <div class="card-header">
+              <span class="card-title">📋 Complete Incident Registry Log</span>
+            </div>
+            <div class="table-wrapper">
+              <table class="cyber-table">
+                <thead>
+                  <tr>
+                    <th>Incident ID</th>
+                    <th>Threat Classification</th>
+                    <th>Severity</th>
+                    <th>Date Detected</th>
+                    <th>Cyber Cell Status</th>
+                  </tr>
+                </thead>
+                <tbody id="parent-history-body">
+                  <!-- JS Table items -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================== -->
+    <!-- 3. POLICE / CYBER OFFICER DASHBOARD VIEW -->
+    <!-- ================================================== -->
+    <section id="police-dashboard" class="dashboard-view">
+      <!-- Officer welcome branch crest banner -->
+      <div class="police-banner">
+        <div class="police-banner-left">
+          <div class="police-crest">🇮🇳</div>
+          <div class="police-banner-text">
+            <h2>AHMEDABAD CYBER CRIME CELL CONTROL CENTER</h2>
+            <p>Ecosystem Terminal Interface • Authorized Personnel Only</p>
+          </div>
+        </div>
+        <div class="flex-gap-2">
+          <span style="font-size: 0.75rem; background: rgba(239, 68, 68, 0.15); color: var(--accent-red); padding: 0.25rem 0.5rem; border-radius: 4px; border: 1px solid var(--accent-red); font-weight: 700; animation: pulse-border 2s infinite;">
+            🔴 ONLINE CONNECTION SECURE
+          </span>
+        </div>
+      </div>
+
+      <div class="dashboard-grid">
+        <!-- Top Stats counters -->
+        <div class="col-4">
+          <div class="cyber-card text-center" style="border-top: 4px solid var(--accent-blue);">
+            <div id="police-stat-cases" style="font-size: 2.25rem; font-weight: 900; color: #fff;">0</div>
+            <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; margin-top: 0.25rem;">Active Investigations</div>
+          </div>
+        </div>
+        <div class="col-4">
+          <div class="cyber-card text-center" style="border-top: 4px solid var(--accent-green);">
+            <div id="police-stat-reports" style="font-size: 2.25rem; font-weight: 900; color: #fff;">0</div>
+            <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; margin-top: 0.25rem;">Reported Incidents</div>
+          </div>
+        </div>
+        <div class="col-4">
+          <div class="cyber-card text-center" style="border-top: 4px solid var(--accent-red);">
+            <div id="police-stat-critical" style="font-size: 2.25rem; font-weight: 900; color: var(--accent-red);">0</div>
+            <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; margin-top: 0.25rem;">High Risk / SOS Alerts</div>
+          </div>
+        </div>
+
+        <!-- Case Registry Grid (Center Left) -->
+        <div class="col-8">
+          <div class="cyber-card mb-4">
+            <div class="card-header">
+              <span class="card-title">📁 Active Digital Incident Docket</span>
+            </div>
+            <div class="table-wrapper">
+              <table class="cyber-table">
+                <thead>
+                  <tr>
+                    <th>Case ID</th>
+                    <th>Child Victim</th>
+                    <th>Threat Type</th>
+                    <th>Severity</th>
+                    <th>Investigation Status</th>
+                    <th>Dossier Doss</th>
+                  </tr>
+                </thead>
+                <tbody id="police-cases-body">
+                  <!-- JS Table items -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Analytics & Visuals (Workflow Charts) -->
+          <div class="dashboard-grid">
+            <div class="col-6">
+              <div class="cyber-card">
+                <div class="card-header">
+                  <span class="card-title">📊 Threat Category Frequency</span>
+                </div>
+                <div class="svg-chart-container" id="threat-chart-bars">
+                  <!-- SVG Bar elements injected by JS -->
+                </div>
+              </div>
+            </div>
+            <div class="col-6">
+              <div class="cyber-card">
+                <div class="card-header">
+                  <span class="card-title">📈 Monthly Case Influx</span>
+                </div>
+                <div class="svg-chart-container" id="monthly-chart-bars">
+                  <!-- SVG Bar elements injected by JS -->
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Analytics and Evidence Vault (Right Side) -->
+        <div class="col-4">
+          <!-- Heatmap location distribution -->
+          <div class="cyber-card mb-4">
+            <div class="card-header">
+              <span class="card-title">🗺️ Sector Threat Heatmap</span>
+            </div>
+            <div id="police-heatmap-container" class="heatmap-scroller">
+              <!-- JS Heatmap elements -->
+            </div>
+          </div>
+
+          <!-- Digital Evidence Repository Vault -->
+          <div class="cyber-card">
+            <div class="card-header">
+              <span class="card-title">🗄️ Telemetry Evidence Vault</span>
+            </div>
+            <div id="police-evidence-list">
+              <!-- JS evidence lists -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ================================================== -->
+  <!-- MODAL CONTAINER (Dynamic report dossiers & guides) -->
+  <!-- ================================================== -->
+  <div id="global-modal" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="modal-title-text">Cyber Crime Case Docket</h3>
+        <button class="close-btn" onclick="closeModal()">×</button>
+      </div>
+      <div class="modal-body" id="modal-body-content">
+        <!-- Injected content goes here -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Global system notification drawer -->
+  <div id="system-toast-container" class="toast-container"></div>
+
+  <!-- Load Scripts -->
+  <script src="mockData.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
