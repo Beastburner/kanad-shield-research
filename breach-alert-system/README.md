@@ -71,11 +71,13 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Edit `backend/.env` and confirm your database credentials:
+Copy `backend/.env.example` to `backend/.env`, confirm your database credentials,
+and set a real `SECRET_KEY` (the server refuses to start without one):
 
 ```
 DATABASE_URL=postgresql://postgres:password@localhost:5432/breach_alert
-SECRET_KEY=change-this-to-a-random-secret-key-at-least-32-chars
+# Generate with: python -c "import secrets; print(secrets.token_urlsafe(48))"
+SECRET_KEY=<paste-a-unique-48+-char-random-string-here>
 ```
 
 Run the seed script to create tables and demo data:

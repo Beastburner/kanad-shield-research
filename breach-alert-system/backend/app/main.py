@@ -1,11 +1,19 @@
+import asyncio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import auth, assets, breaches, alerts, analytics, notifications
 from app.core.database import engine, Base
+from app.core.config import settings
+from app.services.monitoring import monitoring_loop
 
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Real-Time Data Breach Alert System", version="1.0.0")
+
+@app.on_event("startup")
+async def _start_background_monitoring():
+    if settings.BACKGROUND_SCAN_ENABLED:
+        asyncio.create_task(monitoring_loop())
 
 app.add_middleware(
     CORSMiddleware,

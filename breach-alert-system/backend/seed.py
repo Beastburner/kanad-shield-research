@@ -12,19 +12,13 @@ from app.core.security import hash_password
 from datetime import datetime, timedelta
 import json
 
+# Rebuild the schema so model changes (e.g. encrypted columns) are applied.
+Base.metadata.drop_all(bind=engine)
 Base.metadata.create_all(bind=engine)
 
 db = SessionLocal()
 
 try:
-    # Clear existing data
-    db.query(Recommendation).delete()
-    db.query(Alert).delete()
-    db.query(BreachRecord).delete()
-    db.query(MonitoredAsset).delete()
-    db.query(NotificationPreference).delete()
-    db.query(User).delete()
-    db.commit()
 
     # Create demo users
     users = [

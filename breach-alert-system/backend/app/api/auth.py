@@ -4,7 +4,7 @@ from datetime import timedelta
 from app.core.database import get_db
 from app.core.security import hash_password, verify_password, create_access_token, get_current_user
 from app.core.config import settings
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.models.alert import NotificationPreference
 from app.schemas import UserRegister, UserLogin, Token, UserOut
 
@@ -20,7 +20,7 @@ def register(user_data: UserRegister, db: Session = Depends(get_db)):
         email=user_data.email,
         full_name=user_data.full_name,
         organization=user_data.organization,
-        role=user_data.role,
+        role=UserRole.user,
         hashed_password=hash_password(user_data.password)
     )
     db.add(user)

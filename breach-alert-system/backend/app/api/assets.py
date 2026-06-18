@@ -5,6 +5,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
 from app.models.asset import MonitoredAsset, AssetStatus
+from app.core.crypto import blind_index
 from app.schemas import AssetCreate, AssetOut
 
 router = APIRouter()
@@ -20,7 +21,7 @@ def get_assets(current_user: User = Depends(get_current_user), db: Session = Dep
 def add_asset(asset_data: AssetCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     existing = db.query(MonitoredAsset).filter(
         MonitoredAsset.user_id == current_user.id,
-        MonitoredAsset.asset_value == asset_data.asset_value,
+        MonitoredAsset.asset_value_hash == blind_index(asset_data.asset_value),
         MonitoredAsset.is_active == True
     ).first()
     if existing:

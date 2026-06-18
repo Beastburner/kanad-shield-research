@@ -12,7 +12,8 @@ class UserRegister(BaseModel):
     full_name: str
     password: str
     organization: Optional[str] = None
-    role: Optional[UserRole] = UserRole.user
+    # role is intentionally NOT accepted from the client. Privileged roles
+    # (admin/legal/government) must be assigned server-side, never self-selected.
 
 class UserLogin(BaseModel):
     email: EmailStr

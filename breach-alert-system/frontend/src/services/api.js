@@ -40,6 +40,7 @@ export const breachesAPI = {
   scanAll: () => api.post('/breaches/scan-all'),
   getAssetBreaches: (id) => api.get(`/breaches/asset/${id}`),
   getRecommendations: (breachId) => api.get(`/breaches/${breachId}/recommendations`),
+  getLegal: (breachId) => api.get(`/breaches/${breachId}/legal`),
 }
 
 export const alertsAPI = {

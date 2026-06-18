@@ -241,7 +241,7 @@ def normalize_breach_data(raw_breach: Dict) -> Dict:
         "data_classes": json.dumps(data_classes),
         "severity": severity,
         "severity_score": score,
-        "source": "Have I Been Pwned" if settings.HIBP_API_KEY else "Demo Dataset",
+        "source": raw_breach.get("Source") or ("Have I Been Pwned" if settings.HIBP_API_KEY else "Demo Dataset"),
         "domain": raw_breach.get("Domain"),
         "pwn_count": pwn_count,
     }

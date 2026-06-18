@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { alertsAPI, breachesAPI } from '../services/api'
-import { Bell, CheckCheck, X, ChevronDown, ChevronUp, ShieldAlert, Info } from 'lucide-react'
+import { Bell, CheckCheck, X, ChevronDown, ChevronUp, ShieldAlert, Info, Scale, AlertTriangle } from 'lucide-react'
 
 export default function Alerts() {
   const [alerts, setAlerts] = useState([])
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState({})
   const [recommendations, setRecommendations] = useState({})
+  const [legal, setLegal] = useState({})
   const [filter, setFilter] = useState('all')
 
   const load = () => {
@@ -37,6 +38,10 @@ export default function Alerts() {
     if (!recommendations[id] && alert.breach?.id) {
       const res = await breachesAPI.getRecommendations(alert.breach.id).catch(() => ({ data: [] }))
       setRecommendations(r => ({ ...r, [id]: res.data }))
+    }
+    if (!legal[id] && alert.breach?.id) {
+      const res = await breachesAPI.getLegal(alert.breach.id).catch(() => ({ data: null }))
+      setLegal(l => ({ ...l, [id]: res.data }))
     }
   }
 
@@ -93,6 +98,7 @@ export default function Alerts() {
             const borderColor = severityBorder[sev] || '#475569'
             const isExpanded = expanded[alert.id]
             const recs = recommendations[alert.id] || []
+            const legalIntel = legal[alert.id]
 
             return (
               <div key={alert.id} className="glass-card overflow-hidden transition-all"
@@ -162,6 +168,13 @@ export default function Alerts() {
                       </div>
                     </div>
 
+                    {/* Detection source / feed */}
+                    {alert.breach.source && (
+                      <div className="text-xs" style={{ color: '#64748B' }}>
+                        Detected via: <span style={{ color: '#94A3B8' }}>{alert.breach.source}</span>
+                      </div>
+                    )}
+
                     {/* Data classes */}
                     {alert.breach.data_classes && (
                       <div>
@@ -196,6 +209,59 @@ export default function Alerts() {
                             </div>
                           ))}
                         </div>
+                      </div>
+                    )}
+
+                    {/* Legal & compliance intelligence (PS Req #7) */}
+                    {legalIntel && (
+                      <div>
+                        <div className="text-xs font-medium mb-2 flex items-center gap-1" style={{ color: '#64748B' }}>
+                          <Scale size={12} /> LEGAL &amp; COMPLIANCE INTELLIGENCE
+                        </div>
+
+                        {legalIntel.reporting_mandatory && (
+                          <div className="flex gap-2 p-3 rounded-xl mb-3 items-start"
+                            style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}>
+                            <AlertTriangle size={14} style={{ color: '#F87171', marginTop: 2, flexShrink: 0 }} />
+                            <span className="text-xs" style={{ color: '#FCA5A5' }}>
+                              High-severity breach — statutory reporting to CERT-In and the Data Protection Board is mandatory.
+                            </span>
+                          </div>
+                        )}
+
+                        <div className="space-y-2">
+                          {legalIntel.applicable_laws?.map((law, i) => (
+                            <div key={i} className="p-3 rounded-xl"
+                              style={{ background: 'rgba(56,189,248,0.05)', border: '1px solid rgba(56,189,248,0.15)' }}>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-xs font-bold" style={{ color: '#38BDF8' }}>{law.section}</span>
+                                <span className="text-sm font-semibold text-white">{law.title}</span>
+                              </div>
+                              <div className="text-xs mt-0.5" style={{ color: '#64748B' }}>{law.law}</div>
+                              <div className="text-xs mt-1" style={{ color: '#94A3B8' }}>{law.summary}</div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {legalIntel.advisories?.length > 0 && (
+                          <div className="mt-3 space-y-2">
+                            <div className="text-xs font-medium" style={{ color: '#64748B' }}>REQUIRED REPORTING</div>
+                            {legalIntel.advisories.map((adv, i) => (
+                              <div key={i} className="p-3 rounded-xl"
+                                style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.18)' }}>
+                                <div className="flex items-center justify-between gap-2 flex-wrap">
+                                  <span className="text-sm font-semibold text-white">{adv.authority}</span>
+                                  <span className="text-xs font-semibold" style={{ color: '#FBBF24' }}>{adv.deadline}</span>
+                                </div>
+                                <div className="text-xs mt-1" style={{ color: '#94A3B8' }}>{adv.action}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {legalIntel.disclaimer && (
+                          <p className="text-xs mt-3" style={{ color: '#475569', fontStyle: 'italic' }}>{legalIntel.disclaimer}</p>
+                        )}
                       </div>
                     )}
                   </div>

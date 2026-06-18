@@ -6,7 +6,7 @@ import { ShieldAlert, Mail, Lock, User, Building2, Eye, EyeOff } from 'lucide-re
 export default function Register() {
   const { register } = useAuth()
   const navigate = useNavigate()
-  const [form, setForm] = useState({ email: '', full_name: '', password: '', organization: '', role: 'user' })
+  const [form, setForm] = useState({ email: '', full_name: '', password: '', organization: '' })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [showPass, setShowPass] = useState(false)
@@ -77,16 +77,6 @@ export default function Register() {
                 <input type="text" className="input-field pl-10" placeholder="Law Firm / Ministry"
                   value={form.organization} onChange={set('organization')} />
               </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-2" style={{ color: '#94A3B8' }}>Role</label>
-              <select className="input-field" value={form.role} onChange={set('role')}>
-                <option value="user">User</option>
-                <option value="legal">Legal Professional</option>
-                <option value="government">Government Official</option>
-                <option value="admin">Administrator</option>
-              </select>
             </div>
 
             <div>
