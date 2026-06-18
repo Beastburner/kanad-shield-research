@@ -42,7 +42,11 @@ docker compose up -d
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# 5. Run the API
+# 5. (optional) enable semantic retrieval — backfill statute embeddings once.
+#    Skip this and retrieval falls back to keyword search automatically.
+python -m scripts.embed_statutes
+
+# 6. Run the API
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -80,15 +84,19 @@ backend/
 │   ├── models.py          Pydantic request/response + pipeline schemas
 │   ├── audit.py           append-only audit-log writer
 │   ├── integrity.py       SHA-256 + BSA s.63 certificate drafting
-│   ├── documents.py       stage-4 .docx generation (3 doc types)
+│   ├── documents.py       stage-4 .docx generation (8 doc types)
+│   ├── rbac.py            role-based access (IO / SHO / Legal Advisor)
 │   ├── mocks.py           mock CCTNS / BharatPol
 │   └── pipeline/
 │       ├── llm.py         Groq client, JSON-schema-constrained output
-│       ├── retrieval.py   RAG interface (vector or keyword fallback)
+│       ├── retrieval.py   RAG interface (pgvector semantic + keyword fallback)
+│       ├── fallback.py    curated crime→BNS safety-net
 │       └── agents.py      4-stage pipeline + orchestrator
 ├── db/
-│   ├── schema.sql         9 tables + append-only trigger + pgvector
+│   ├── schema.sql         tables + append-only trigger + pgvector
 │   └── seed.sql           demo BNS/BNSS/BSA corpus + judgment cache
+├── scripts/
+│   └── embed_statutes.py  one-time embedding backfill (semantic retrieval)
 ├── docker-compose.yml
 ├── requirements.txt
 ├── .env.example
@@ -97,22 +105,29 @@ backend/
 
 ## Notes / scope
 
-- **Retrieval = keyword (OR full-text) over heading + statute text + a per-section
-  `keywords` column** of plain-language trigger terms (e.g. `upi otp phishing` →
-  BNS 318; `entrusted diverted clerk` → BNS 316). This is deterministic and
-  demo-safe, and pre-tests 10/10 on the scenarios in `../test-scenarios.md`.
-  - **Upgrade path to semantic search (production):** implement
-    `retrieval.embed()` with a 384-dim model (e.g. `bge-m3` / a
-    sentence-transformers model — see `../../research/legal-framework-bns-bnss-bsa.md`),
-    backfill `statute_chunks.embedding`, and `retrieve_statutes()` auto-switches
-    to the pgvector query in `_vector_search`. **The agent code does not change.**
-    Embeddings handle vocabulary mismatch the keyword layer can't; keep keywords
-    as a hybrid fallback.
+- **Retrieval is semantic (pgvector) with a keyword fallback.** `retrieval.embed()`
+  encodes the query with a 384-dim `fastembed` model (`all-MiniLM-L6-v2` on ONNX —
+  no PyTorch, matching `statute_chunks.embedding vector(384)`) and
+  `retrieve_statutes()` runs the cosine-distance query in `_vector_search`. If the
+  model isn't installed, or the `embedding` column hasn't been backfilled yet,
+  retrieval **transparently falls back** to OR full-text search over
+  heading + statute text + a per-section `keywords` column (e.g. `upi otp phishing`
+  → BNS 318). The keyword layer is deterministic and pre-tests 10/10 on the
+  scenarios in `../test-scenarios.md`, so the app works with or without embeddings.
+  - **Enable semantic search:** `pip install -r requirements.txt` (pulls
+    `fastembed`, a lightweight ONNX runtime — ~150 MB, no CUDA/torch), then backfill
+    embeddings once: `python -m scripts.embed_statutes` (re-run with `--all` to
+    re-embed). The agent code never changes — only the retrieved chunks improve.
+  - **Curated fallback safety-net (separate from retrieval):** if the LLM pipeline
+    returns no validated section, `pipeline/fallback.py` supplies sections from a
+    source-verified crime→BNS mapping so analysis never dead-ends live.
 - Confidence below `CONFIDENCE_THRESHOLD` → case status `review_required`,
   every output carries the disclaimer *"AI-assisted draft — officer review required."*
 - Validation fails **closed**: a section the validation agent does not explicitly
   confirm is dropped, never asserted to the officer.
-- No auth, mock-only government integrations (by design).
+- Role-based access (IO / SHO / Legal Advisor) via `X-Actor-Role` / `X-Actor-Name`
+  headers — no login server, but every mutation is gated + attributed in the audit
+  log. Mock-only government integrations (by design).
 - Multilingual I/O via `POST /translate` (EN/HI/GU). OCR ingestion of scanned FIR images via
   `POST /ocr` (Tesseract — requires the host binary: `sudo apt-get install -y tesseract-ocr`).
 

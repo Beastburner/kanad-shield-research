@@ -51,7 +51,11 @@ OpenAPI:   http://localhost:8000/openapi.json ← generate a typed client if you
 ```
 
 - **CORS is already open** (`allow_origins=["*"]`), so a Vite dev server on `:5173` can call it directly.
-- **No auth** — there are no tokens/headers to send. Just call the endpoints.
+- **No login server, but RBAC is enforced (P4).** Send the signed-in officer on
+  every request via `X-Actor-Role` (`IO` | `SHO` | `LEGAL_ADVISOR`) and
+  `X-Actor-Name` headers (the axios client already does this from `localStorage`).
+  `LEGAL_ADVISOR` is read-only — create/edit/file/upload return **403** — so the UI
+  disables those controls for that role. See API_CONTRACT §"Auth / RBAC".
 - All endpoints are **synchronous JSON**. `POST /cases/{id}/analyze` is the slow one (it runs the
   4 LLM agents — expect a few seconds); show a spinner. Everything else is fast.
 - Error shape is standard FastAPI: `{ "detail": "..." }` with the HTTP status. See API_CONTRACT §"Common error shape".
