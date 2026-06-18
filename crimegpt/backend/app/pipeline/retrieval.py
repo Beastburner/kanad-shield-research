@@ -1,17 +1,16 @@
 """Statute & judgment retrieval interface (the RAG layer).
 
-The clean seam: `retrieve_statutes()` returns the top-k statute chunks for a
-query. The default implementation uses Postgres full-text / ILIKE keyword match
-so the classification slice is callable WITHOUT a wired embedding model.
-
-To upgrade to true semantic search, implement `embed()` (e.g. via a
-sentence-transformers model or an embedding API), populate statute_chunks.embedding,
-and switch retrieve_statutes() to the vector query shown in `_vector_search`.
+The clean seam: `retrieve_statutes()` returns the top-k statute chunks for a query.
+It runs semantic (pgvector cosine) search via `embed()` + `_vector_search` when a
+fastembed model is loaded and `statute_chunks.embedding` is populated
+(`python -m scripts.embed_statutes`), and transparently falls back to Postgres
+full-text / keyword match otherwise — so it is callable with OR without embeddings.
 The agent code never changes — it only consumes the returned chunks."""
 
 import re
 from typing import Any
 
+import anyio
 import httpx
 
 from ..config import settings
@@ -33,12 +32,45 @@ def _or_tsquery(query: str) -> str:
     return " | ".join(dict.fromkeys(terms))  # de-dup, preserve order
 
 
-async def embed(text: str) -> list[float] | None:
-    """Embedding hook. Returns None until a real model is wired.
+# Lazily-loaded fastembed model (ONNX runtime, no torch). Load once, off the hot
+# path; _model_failed latches True if the package/model can't be loaded so we
+# don't retry the slow import on every query — we just use keyword search.
+_model: Any = None
+_model_failed = False
 
-    Wire a 384-dim embedder here (matching schema.sql vector(384)) to enable
-    semantic retrieval. Left as a stub deliberately per build scope."""
-    return None
+
+def _load_model() -> Any:
+    global _model, _model_failed
+    if _model is not None or _model_failed:
+        return _model
+    try:
+        from fastembed import TextEmbedding
+
+        _model = TextEmbedding(model_name=settings.embedding_model)
+    except Exception as e:  # package missing / no model / offline — degrade gracefully
+        print(f"[embed] semantic model unavailable ({e}); using keyword retrieval")
+        _model_failed = True
+    return _model
+
+
+async def embed(text: str) -> list[float] | None:
+    """Encode `text` to a 384-dim vector (matches schema.sql vector(384)).
+
+    Returns None when the embedding model can't be loaded, so retrieval falls back
+    to PostgreSQL keyword search. Encoding runs in a worker thread to keep the
+    async event loop responsive."""
+    model = _load_model()
+    if model is None:
+        return None
+    # fastembed .embed() returns a generator of numpy arrays (one per input).
+    vec = await anyio.to_thread.run_sync(lambda: next(iter(model.embed([text]))))
+    return vec.tolist()
+
+
+def _to_pgvector(vec: list[float]) -> str:
+    """pgvector accepts a bracketed literal; passing a string + ::vector cast avoids
+    needing an asyncpg type codec registration."""
+    return "[" + ",".join(f"{x:.6f}" for x in vec) + "]"
 
 
 async def retrieve_statutes(
@@ -53,7 +85,12 @@ async def retrieve_statutes(
     available, else keyword search."""
     vec = await embed(query)
     if vec is not None:
-        return await _vector_search(vec, k, codes)
+        rows = await _vector_search(vec, k, codes)
+        if rows:
+            return rows
+        # Model is loaded but embeddings aren't populated yet (run
+        # scripts/embed_statutes.py) — fall back to keyword so we never return
+        # empty just because the vector column is unfilled.
     return await _keyword_search(query, k, codes)
 
 
@@ -69,7 +106,7 @@ async def _vector_search(
         ORDER BY embedding <=> $1::vector
         LIMIT $3
         """,
-        vec,
+        _to_pgvector(vec),
         list(codes) if codes else None,
         k,
     )
