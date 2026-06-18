@@ -18,7 +18,7 @@ from ..models import (
     SuggestedJudgment,
     SuggestedSection,
 )
-from . import llm, retrieval
+from . import fallback, llm, retrieval
 
 
 # The narrative is untrusted free text. Anything between these fences is DATA,
@@ -170,7 +170,20 @@ async def run_pipeline(case_id, narrative: str) -> AnalyzeResult:
         s.validated = fits.get(_norm_key(f"{s.code} {s.section_no}"), False)
     sections = [s for s in sections if s.validated]
 
-    confidence = verdict.overall_confidence
+    # Safety-net: if no validated section survived (LLM misfire / sparse narrative
+    # / flaky network), fall back to the curated, source-verified BNS mapping so
+    # the system suggests the correct charge instead of dead-ending live.
+    used_fallback = False
+    if not sections:
+        fb = await fallback.fallback_sections(facts)
+        if fb:
+            sections = fb
+            used_fallback = True
+
+    # When the curated fallback supplied the sections, trust their (moderate)
+    # confidence rather than the validator's score for a now-empty input set.
+    confidence = max((s.confidence for s in sections), default=0.0) if used_fallback \
+        else verdict.overall_confidence
     review_required = confidence < settings.confidence_threshold or not sections
     status = "review_required" if review_required else "analyzed"
 
@@ -187,6 +200,10 @@ async def run_pipeline(case_id, narrative: str) -> AnalyzeResult:
     ]
 
     concerns = list(verdict.concerns)
+    if used_fallback:
+        concerns.insert(0, "LLM classification returned no validated section; the "
+                           "sections below come from the curated BNS fallback mapping "
+                           "— officer review required.")
     if review_required:
         concerns.insert(0, "Confidence below threshold — officer review required.")
 
