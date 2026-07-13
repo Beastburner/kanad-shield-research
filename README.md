@@ -14,8 +14,6 @@ what NOT to build** for our two chosen problem statements.
 | PS ID | Name | Our Internal Codename |
 |-------|------|----------------------|
 | PS-69EEFDFB90B99 | CrimeGPT – AI-Powered Automation for Crime Documentation and Legal Intelligence | **CrimeGPT** |
-| PS-69EEFDA9B3255 | Cyber Safety and Protection Platform for Children | **Child Protection** |
-| _(3rd PS — TBD)_ | _to be decided_ | — |
 
 ---
 
@@ -38,10 +36,6 @@ kanad-shield-research/
 │   ├── README.md                       ← scope, build/don't-build, tech stack
 │   ├── compliance-checklist.md
 │   └── architecture.md
-├── child-protection/
-│   ├── README.md                       ← scope, build/don't-build, tech stack
-│   ├── compliance-checklist.md
-│   └── architecture.md
 └── reference/
     ├── sources.md                      ← every URL we pulled
     └── glossary.md                     ← acronyms decoded
@@ -58,9 +52,6 @@ Our edge is walking in and speaking their language:
 - **CrimeGPT:** every legal suggestion mapped to **BNS / BNSS / BSA** (not the old IPC/CrPC),
   grounded in real statute text + Indian Kanoon judgments, with **SHA-256 hashing** and an
   auto-drafted **BSA Section 63 evidence certificate** on every document.
-- **Child Protection:** architected on the **DPDP Act child-safety exemption**, with isolated
-  child/adult data pipelines, a **parental consent dashboard**, and **POCSO Section 19
-  mandatory-reporting** wired directly into the alert flow.
 
 ---
 
@@ -79,5 +70,3 @@ Our edge is walking in and speaking their language:
 ---
 
 _Last compiled: 15 June 2026. All research current as of this date._
-# kanad-shield-research
-# kanad-shield-research
