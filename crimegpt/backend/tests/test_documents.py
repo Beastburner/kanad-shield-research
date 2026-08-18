@@ -27,6 +27,7 @@ ALL_DOC_TYPES = [
     "medical_treatment_letter",
     "face_identification_form",
     "lers_request",
+    "appearance_notice",   # BNSS Second Schedule Form No. 1 — the one statutory form
 ]
 
 

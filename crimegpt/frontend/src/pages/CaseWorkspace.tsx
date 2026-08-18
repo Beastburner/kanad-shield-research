@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { renderAsync } from 'docx-preview';
 import {
@@ -79,6 +79,8 @@ function TranslatingText({ text, activeLang }: { text: string; activeLang: strin
       setTranslatedText(res.text);
     } catch (err) {
       console.error('Translation failed', err);
+      // Surface it where the officer clicked — a silent no-op reads as a dead button.
+      setTranslatedText(t('translationFailed'));
     } finally {
       setTranslating(false);
     }
@@ -144,6 +146,38 @@ function TranslatingText({ text, activeLang }: { text: string; activeLang: strin
   );
 }
 
+// The analyze endpoint is one request with no progress events, so this reports
+// the stages the pipeline actually runs (see backend run_pipeline) plus real
+// elapsed time. It deliberately does NOT claim to know which stage is executing —
+// a fake stepper would be guessing.
+function AnalysisProgress({ seconds }: { seconds: number }) {
+  const { t } = useTranslation();
+  return (
+    <Card sx={{ mb: 3 }} role="status" aria-live="polite">
+      <CardContent>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5, flexWrap: 'wrap' }}>
+          <CircularProgress size={20} />
+          <Typography variant="h6" sx={{ fontWeight: 700 }}>{t('analysisRunning')}</Typography>
+          <Chip
+            size="small"
+            label={t('elapsed', { n: seconds })}
+            sx={{ ml: 'auto', fontVariantNumeric: 'tabular-nums' }}
+          />
+        </Box>
+        <LinearProgress sx={{ mb: 2, borderRadius: 1 }} />
+        <Box component="ol" sx={{ m: 0, pl: 2.5, color: 'text.secondary', '& li': { mb: 0.5 } }}>
+          <Typography component="li" variant="body2">{t('analysisStage1')}</Typography>
+          <Typography component="li" variant="body2">{t('analysisStage2')}</Typography>
+          <Typography component="li" variant="body2">{t('analysisStage3')}</Typography>
+        </Box>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
+          {t('analysisTakesTime')}
+        </Typography>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function CaseWorkspace() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -151,7 +185,16 @@ export default function CaseWorkspace() {
   const { canWrite } = useActor();
 
   // Tab State
-  const [tabValue, setTabValue] = useState(0);
+  // Tab lives in the URL: Back now steps between tabs instead of leaving the
+  // case, and an officer can send a colleague a link straight to the Audit Trail.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawTab = parseInt(searchParams.get('tab') || '0', 10);
+  const tabValue = Number.isFinite(rawTab) ? Math.min(6, Math.max(0, rawTab)) : 0;
+  const setTabValue = (val: number) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', String(val));
+    setSearchParams(next);
+  };
 
   // Data States
   const [caseObj, setCaseObj] = useState<Case | null>(null);
@@ -166,10 +209,20 @@ export default function CaseWorkspace() {
   const [validationConcerns, setValidationConcerns] = useState<string[]>([]);
   const [disclaimer, setDisclaimer] = useState('AI-assisted draft — officer review required.');
 
+  // Green means "you can rely on this number". The fallback path reports exactly
+  // 0.70 with concerns attached, and 0.70 used to clear the old > 0.6 cutoff — so a
+  // run where the AI never executed showed a green score. Same 0.7 bar as the
+  // per-section chips, and any concern or forced review keeps it amber.
+  const scoreIsTrustworthy =
+    analysisConfidence > 0.7 && !reviewRequired && validationConcerns.length === 0;
+
   // Loading States
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   const [savingFacts, setSavingFacts] = useState(false);
+  const [analysisSeconds, setAnalysisSeconds] = useState(0);
+  // JSON snapshot of the last persisted facts; anything different is unsaved.
+  const [savedFactsSnapshot, setSavedFactsSnapshot] = useState<string | null>(null);
   const [generatingDoc, setGeneratingDoc] = useState<string | null>(null);
   
   // BharatPol Search
@@ -205,7 +258,7 @@ export default function CaseWorkspace() {
       setTransOutput(res.text);
     } catch (err) {
       console.error('Translation failed', err);
-      setTransOutput('Translation failed.');
+      setTransOutput(t('translationFailed'));
     } finally {
       setTransLoading(false);
     }
@@ -228,7 +281,7 @@ export default function CaseWorkspace() {
       setViewerBlob(blob);
     } catch (err) {
       console.error('Failed to load document for preview', err);
-      setError('Could not load document preview.');
+      setError(t('previewFailed'));
       setViewerOpen(false);
     } finally {
       setViewerLoading(false);
@@ -249,6 +302,35 @@ export default function CaseWorkspace() {
   // Errors / Success Messages
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  // Fact corrections are local until Save; without this the officer could edit,
+  // switch tab, and lose the work with no warning at all.
+  const factsDirty = facts !== null && savedFactsSnapshot !== null
+    && JSON.stringify(facts) !== savedFactsSnapshot;
+
+  useEffect(() => {
+    if (!factsDirty) return;
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [factsDirty]);
+
+  // Real elapsed time during analysis — the one honest progress signal available.
+  useEffect(() => {
+    if (!analyzing) { setAnalysisSeconds(0); return; }
+    const startedAt = Date.now();
+    const timer = setInterval(
+      () => setAnalysisSeconds(Math.round((Date.now() - startedAt) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [analyzing]);
+
+  // A failure banner at the top of a long form is invisible from the bottom of it.
+  const alertAnchorRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!error) return;
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    alertAnchorRef.current?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' });
+  }, [error]);
 
   const fetchWorkspaceData = async () => {
     if (!id) return;
@@ -296,6 +378,7 @@ export default function CaseWorkspace() {
       try {
         const factsData = await api.getFacts(id);
         setFacts(factsData.facts);
+        setSavedFactsSnapshot(JSON.stringify(factsData.facts));
       } catch (err: any) {
         if (err.response?.status === 404) {
           // Facts don't exist yet, we must run /analyze
@@ -325,7 +408,7 @@ export default function CaseWorkspace() {
 
     } catch (err: any) {
       console.error(err);
-      setError('Failed to load workspace data.');
+      setError(t('workspaceLoadFailed'));
     } finally {
       setLoading(false);
     }
@@ -345,6 +428,7 @@ export default function CaseWorkspace() {
       
       setCaseObj(prev => prev ? { ...prev, status: res.status } : null);
       setFacts(res.facts);
+      setSavedFactsSnapshot(JSON.stringify(res.facts));
       setSections(res.sections);
       setJudgments(res.judgments);
       setAnalysisConfidence(res.confidence);
@@ -361,12 +445,12 @@ export default function CaseWorkspace() {
       // validator caveat is reported by the notes banner, not by demoting the
       // success toast on an analysis that passed.
       setSuccess(res.review_required
-        ? 'Analysis complete — read the review notes above before relying on it.'
-        : 'AI Legal analysis complete!');
+        ? t('analysisCompleteReview')
+        : t('analysisComplete'));
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       console.error(err);
-      setError(err.response?.data?.detail || 'Analysis pipeline failed. Check GROQ API credentials.');
+      setError(err.response?.data?.detail || t('analysisFailed'));
     } finally {
       setAnalyzing(false);
     }
@@ -392,7 +476,8 @@ export default function CaseWorkspace() {
       setError(null);
       setSuccess(null);
       await api.updateFacts(id, facts);
-      setSuccess('Facts updated and logged to audit trail.');
+      setSavedFactsSnapshot(JSON.stringify(facts));
+      setSuccess(t('factsSaved'));
       
       // Refresh timeline
       await refreshTrail();
@@ -400,7 +485,7 @@ export default function CaseWorkspace() {
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       console.error(err);
-      setError('Failed to save fact corrections.');
+      setError(t('factsSaveFailed'));
     } finally {
       setSavingFacts(false);
     }
@@ -413,8 +498,8 @@ export default function CaseWorkspace() {
       setError(null);
       setSuccess(null);
       await api.generateDocument(id, type, i18n.language);
-      const langName = i18n.language === 'hi' ? 'Hindi' : i18n.language === 'gu' ? 'Gujarati' : 'English';
-      setSuccess(`Document '${type}' generated in ${langName}!`);
+      const langName = i18n.language === 'hi' ? t('langHindi') : i18n.language === 'gu' ? t('langGujarati') : t('langEnglish');
+      setSuccess(t('docGenerated', { type, lang: langName }));
       
       // Update Case Object Status to 'documented'
       const updatedCase = await api.getCase(id);
@@ -428,7 +513,7 @@ export default function CaseWorkspace() {
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       console.error(err);
-      setError(err.response?.data?.detail || 'Precondition check failed. Make sure to run legal analysis first.');
+      setError(err.response?.data?.detail || t('docGenFailed'));
     } finally {
       setGeneratingDoc(null);
     }
@@ -458,11 +543,11 @@ export default function CaseWorkspace() {
       await api.addDiaryEntry(id, diaryNote.trim());
       setDiaryNote('');
       await refreshTrail();
-      setSuccess('Diary entry logged.');
+      setSuccess(t('diaryLogged'));
       setTimeout(() => setSuccess(null), 2500);
     } catch (err: any) {
       console.error(err);
-      setError(err.response?.data?.detail || 'Failed to add diary entry.');
+      setError(err.response?.data?.detail || t('diaryFailed'));
     } finally {
       setAddingDiary(false);
     }
@@ -480,11 +565,11 @@ export default function CaseWorkspace() {
       const evData = await api.listEvidence(id);
       setEvidence(evData);
       await refreshTrail();
-      setSuccess('Evidence uploaded and hashed.');
+      setSuccess(t('evidenceUploaded'));
       setTimeout(() => setSuccess(null), 2500);
     } catch (err: any) {
       console.error(err);
-      setError(err.response?.data?.detail || 'Evidence upload failed.');
+      setError(err.response?.data?.detail || t('evidenceUploadFailed'));
     } finally {
       setEvUploading(false);
       if (evFileRef.current) evFileRef.current.value = '';
@@ -502,7 +587,7 @@ export default function CaseWorkspace() {
       setFaceResult(res);
     } catch (err: any) {
       console.error(err);
-      setError(err.response?.data?.detail || 'Face match failed (is OpenCV installed on the backend?).');
+      setError(err.response?.data?.detail || t('faceMatchFailed'));
     } finally {
       setFaceMatching(false);
       if (probeFileRef.current) probeFileRef.current.value = '';
@@ -561,7 +646,10 @@ export default function CaseWorkspace() {
     { type: 'accused_panchanama', label: t('docPanchanama'), desc: t('docPanchanamaDesc') },
     { type: 'medical_treatment_letter', label: t('docMedical'), desc: t('docMedicalDesc') },
     { type: 'face_identification_form', label: t('docFaceId'), desc: t('docFaceIdDesc') },
-    { type: 'lers_request', label: t('docLers'), desc: t('docLersDesc') }
+    { type: 'lers_request', label: t('docLers'), desc: t('docLersDesc') },
+    // The only police-issued form prescribed in the BNSS Second Schedule itself
+    // (Form No. 1) — the one document whose exact layout is statutory.
+    { type: 'appearance_notice', label: t('docAppearanceNotice'), desc: t('docAppearanceNoticeDesc') }
   ];
 
   return (
@@ -605,9 +693,9 @@ export default function CaseWorkspace() {
                   value={analysisConfidence * 100}
                   aria-label={t('confidence')}
                   aria-valuetext={`${Math.round(analysisConfidence * 100)} percent`}
-                  sx={{ width: 100, height: 6, borderRadius: 3, '& .MuiLinearProgress-bar': { bgcolor: analysisConfidence > 0.6 ? 'success.main' : 'warning.main' } }} 
+                  sx={{ width: 100, height: 6, borderRadius: 3, '& .MuiLinearProgress-bar': { bgcolor: scoreIsTrustworthy ? 'success.main' : 'warning.main' } }} 
                 />
-                <Typography variant="body2" sx={{ fontWeight: 700, color: analysisConfidence > 0.6 ? 'success.main' : 'warning.main' }}>
+                <Typography variant="body2" sx={{ fontWeight: 700, color: scoreIsTrustworthy ? 'success.main' : 'warning.main' }}>
                   {Math.round(analysisConfidence * 100)}%
                 </Typography>
               </Box>
@@ -635,16 +723,20 @@ export default function CaseWorkspace() {
       )}
 
       {/* Global Alerts */}
+      <div ref={alertAnchorRef} />
       {error && (
-        <Alert severity="error" sx={{ mb: 3, borderRadius: 2 }}>
+        <Alert severity="error" role="alert" sx={{ mb: 3, borderRadius: 2 }}>
           {error}
         </Alert>
       )}
       {success && (
-        <Alert severity="success" sx={{ mb: 3, borderRadius: 2 }}>
+        <Alert severity="success" role="status" sx={{ mb: 3, borderRadius: 2 }}>
           {success}
         </Alert>
       )}
+
+      {/* Shown for both the first run and a re-analyze */}
+      {analyzing && <AnalysisProgress seconds={analysisSeconds} />}
 
       {/* Two distinct states, deliberately not merged into one banner:
           - reviewRequired  -> the pipeline cannot stand behind this result (the AI
@@ -713,8 +805,12 @@ export default function CaseWorkspace() {
         <Box>
           <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
             <Tabs 
-              value={tabValue} 
-              onChange={(_, val) => setTabValue(val)} 
+              value={tabValue}
+              onChange={(_, val) => {
+                // Only the Facts tab holds unsaved edits.
+                if (factsDirty && tabValue === 0 && !window.confirm(t('unsavedLeaveTab'))) return;
+                setTabValue(val);
+              }} 
               variant="scrollable"
               scrollButtons="auto"
             >
@@ -736,16 +832,30 @@ export default function CaseWorkspace() {
                   <Typography variant="h6" sx={{ fontWeight: 700 }}>
                     {t('facts')}
                   </Typography>
-                  <Button
-                    id="btn-save-facts"
-                    variant="contained"
-                    color="primary"
-                    startIcon={savingFacts ? <CircularProgress size={16} color="inherit" /> : <CheckCircle size={16} />}
-                    onClick={handleSaveFacts}
-                    disabled={savingFacts || !canWrite}
-                  >
-                    {savingFacts ? t('saving') : t('saveFacts')}
-                  </Button>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                    {factsDirty && (
+                      <Chip
+                        size="small"
+                        label={t('unsavedChanges')}
+                        sx={{
+                          bgcolor: 'rgba(var(--mui-palette-warning-mainChannel) / 0.12)',
+                          color: 'warning.main',
+                          border: '1px solid',
+                          borderColor: 'rgba(var(--mui-palette-warning-mainChannel) / 0.4)',
+                        }}
+                      />
+                    )}
+                    <Button
+                      id="btn-save-facts"
+                      variant="contained"
+                      color="primary"
+                      startIcon={savingFacts ? <CircularProgress size={16} color="inherit" /> : <CheckCircle size={16} />}
+                      onClick={handleSaveFacts}
+                      disabled={savingFacts || !canWrite}
+                    >
+                      {savingFacts ? t('saving') : t('saveFacts')}
+                    </Button>
+                  </Box>
                 </Box>
                 
                 <Alert severity="info" sx={{ mb: 4, borderRadius: 2 }}>
@@ -925,7 +1035,12 @@ export default function CaseWorkspace() {
                   </Grid>
                 </Grid>
 
-                <Box sx={{ mt: 4, display: 'flex', gap: 2, justifyContent: 'flex-end' }}>
+                <Box sx={{ mt: 4, display: 'flex', gap: 2, justifyContent: 'flex-end', alignItems: 'center' }}>
+                  {factsDirty && (
+                    <Typography variant="body2" sx={{ color: 'warning.main', fontWeight: 700 }}>
+                      {t('unsavedPrompt')}
+                    </Typography>
+                  )}
                   <Button
                     id="btn-save-facts-footer"
                     variant="contained"

@@ -186,10 +186,23 @@ async def _indiankanoon_live(query: str, k: int) -> list[dict[str, Any]] | None:
         return None
 
     results: list[dict[str, Any]] = []
-    for d in data.get("docs", [])[:k]:
+    for d in data.get("docs", []):
         tid = d.get("tid")
         if tid is None:
             continue
+        # Indian Kanoon indexes legislation alongside judgments, and an unfiltered
+        # search happily returns "The Mumbai Municipal Corporation Act, 1888" as a
+        # "judgment". Keep only documents from a court or tribunal; where docsource
+        # is absent, require the "X vs Y" shape every real judgment title has.
+        source = (d.get("docsource") or "").lower()
+        title = d.get("title") or ""
+        if source:
+            if "court" not in source and "tribunal" not in source:
+                continue
+        elif " vs " not in title.lower():
+            continue
+        if len(results) >= k:
+            break
         results.append({
             "indiankanoon_doc_id": f"IK-{tid}",
             "title": _strip_html(d.get("title", "")) or f"Indian Kanoon doc {tid}",

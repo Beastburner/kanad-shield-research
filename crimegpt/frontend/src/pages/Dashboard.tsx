@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
@@ -19,7 +19,8 @@ import {
   Typography,
   Chip,
   Tooltip,
-  CircularProgress
+  CircularProgress,
+  LinearProgress
 } from '@mui/material';
 import {
   Plus,
@@ -101,26 +102,41 @@ export default function Dashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const fetchCases = async (query?: string) => {
+  const requestSeq = useRef(0);
+
+  const fetchCases = useCallback(async (query?: string) => {
+    const seq = ++requestSeq.current;
     try {
       setLoading(true);
       setLoadError(null);
       const data = await api.listCases(query);
+      // A slower earlier keystroke must not overwrite a newer result.
+      if (seq !== requestSeq.current) return;
       setCases(data);
     } catch (error) {
+      if (seq !== requestSeq.current) return;
       console.error('Error fetching cases:', error);
       // Without this the empty list below reads as "no cases exist", which is a
       // very different claim from "the case service could not be reached".
       setLoadError(t('loadCasesError'));
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (seq === requestSeq.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-  };
+  }, [t]);
 
+  const isFirstLoad = useRef(true);
   useEffect(() => {
-    fetchCases();
-  }, []);
+    if (isFirstLoad.current) {
+      isFirstLoad.current = false;
+      fetchCases();
+      return;
+    }
+    const handle = setTimeout(() => fetchCases(searchQuery || undefined), 300);
+    return () => clearTimeout(handle);
+  }, [searchQuery, fetchCases]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -128,11 +144,8 @@ export default function Dashboard() {
   };
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // The debounced effect above performs the search, including on clear.
     setSearchQuery(e.target.value);
-    // Auto-search on empty query to restore list
-    if (e.target.value === '') {
-      fetchCases();
-    }
   };
 
   // Calculations for stats
@@ -221,7 +234,12 @@ export default function Dashboard() {
 
       {/* Case Table */}
       <TableContainer component={Paper} variant="outlined" sx={{ overflowX: 'auto' }}>
-        {loading ? (
+        {/* Re-querying keeps the current rows visible — a table that vanishes on
+            every keystroke is worse than a slim progress line. */}
+        {loading && cases.length > 0 && (
+          <LinearProgress aria-label={t('searchingCases')} sx={{ height: 2 }} />
+        )}
+        {loading && cases.length === 0 ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 8, flexDirection: 'column', gap: 2 }}>
             <CircularProgress color="primary" />
             <Typography color="text.secondary" role="status">{t('loadingCases')}</Typography>

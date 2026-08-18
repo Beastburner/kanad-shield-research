@@ -36,12 +36,18 @@ export default function NewCase() {
   const [uploadingOcr, setUploadingOcr] = useState(false);
   
   const [error, setError] = useState<string | null>(null);
+  // Validate on blur rather than only on submit, and show it on the field.
+  const [narrativeTouched, setNarrativeTouched] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const narrativeTooShort = firNarrative.trim().length < 10;
+  const showNarrativeError = narrativeTouched && narrativeTooShort;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!firNarrative || firNarrative.trim().length < 10) {
-      setError(t('firTooShort'));
+    if (narrativeTooShort) {
+      setNarrativeTouched(true);
+      document.getElementById('fir-narrative-input')?.focus();
       return;
     }
 
@@ -68,11 +74,11 @@ export default function NewCase() {
       const mockFir = await api.importFromCCTNS('Ahmedabad', 'Ramesh Patel');
       setFirNarrative(mockFir.fir_narrative);
       setCaseNumber(mockFir.cctns_fir_id);
-      setSuccessMsg('Successfully imported mock FIR from CCTNS integration.');
+      setSuccessMsg(t('cctnsImported'));
       setTimeout(() => setSuccessMsg(null), 3000);
     } catch (err: any) {
       console.error(err);
-      setError('CCTNS Import failed. Is the backend running?');
+      setError(t('cctnsFailed'));
     } finally {
       setImportingCctns(false);
     }
@@ -91,13 +97,13 @@ export default function NewCase() {
       setError(null);
       const ocrResult = await api.ocrScannedFIR(file, 'eng');
       setFirNarrative(ocrResult.text);
-      const how = ocrResult.source === 'pdf_text' ? 'PDF text layer'
-        : ocrResult.source === 'pdf_ocr' ? 'scanned PDF (OCR)' : 'image (OCR)';
-      setSuccessMsg(`Extracted ${ocrResult.char_count} characters from ${how}.`);
+      const how = ocrResult.source === 'pdf_text' ? t('ocrSourcePdfText')
+        : ocrResult.source === 'pdf_ocr' ? t('ocrSourcePdfOcr') : t('ocrSourceImage');
+      setSuccessMsg(t('ocrExtracted', { chars: ocrResult.char_count, source: how }));
       setTimeout(() => setSuccessMsg(null), 3000);
     } catch (err: any) {
       console.error(err);
-      setError(err.response?.data?.detail || 'OCR extraction failed. Verify Tesseract dependencies.');
+      setError(err.response?.data?.detail || t('ocrFailed'));
     } finally {
       setUploadingOcr(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -126,13 +132,13 @@ export default function NewCase() {
               </Typography>
 
               {error && (
-                <Alert severity="error" icon={<AlertCircle size={20} />} sx={{ mb: 3, borderRadius: 2 }}>
+                <Alert severity="error" role="alert" icon={<AlertCircle size={20} />} sx={{ mb: 3, borderRadius: 2 }}>
                   {error}
                 </Alert>
               )}
 
               {successMsg && (
-                <Alert severity="success" sx={{ mb: 3, borderRadius: 2 }}>
+                <Alert severity="success" role="status" sx={{ mb: 3, borderRadius: 2 }}>
                   {successMsg}
                 </Alert>
               )}
@@ -165,8 +171,17 @@ export default function NewCase() {
                       placeholder={t('firNarrativePlaceholder')}
                       value={firNarrative}
                       onChange={(e) => setFirNarrative(e.target.value)}
+                      onBlur={() => setNarrativeTouched(true)}
                       disabled={loading}
-                      helperText={t('firNarrativeHelper')}
+                      error={showNarrativeError}
+                      helperText={
+                        <Box component="span" sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
+                          <span>{showNarrativeError ? t('narrativeTooShort') : t('firNarrativeHelper')}</span>
+                          <Box component="span" sx={{ flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+                            {t('charactersEntered', { n: firNarrative.trim().length })}
+                          </Box>
+                        </Box>
+                      }
                     />
                   </Grid>
 

@@ -46,6 +46,12 @@ _DOC_META: dict[str, tuple[str, str]] = {
                                  "Investigation aid — BNS / BNSS proceedings"),
     "lers_request": ("LAW ENFORCEMENT DATA REQUEST — META / WHATSAPP / INSTAGRAM (LERS)",
                      "Under Section 94 BNSS, 2023 r/w the IT Act, 2000 and platform LERS policy"),
+    # The ONLY police-issued investigative form prescribed in the BNSS Second
+    # Schedule itself (Form No. 1 of 58) — so this document's layout is statutory,
+    # not our design. Field order follows the Schedule verbatim; see
+    # document-format-research.md §2.
+    "appearance_notice": ("NOTICE FOR APPEARANCE BY THE POLICE",
+                          "Under Section 35(3), BNSS, 2023 — Second Schedule, Form No. 1"),
 }
 
 _BLANK = "____________________"
@@ -525,6 +531,40 @@ def _build_lers_request(d, facts, sections, case_number):
                  ["Endorsing Officer (SHO)", "Name & Rank"]])
 
 
+def _build_appearance_notice(d, facts, sections, case_number):
+    # Field order is the Second Schedule's, verbatim: Serial No. / Police Station /
+    # addressee block / s.35(3) recital / appearance direction / officer-in-charge /
+    # seal. Anything the case data cannot fill stays a blank for the officer.
+    us = ", ".join(f"{s.code} {s.section_no}" for s in sections) or _BLANK
+
+    _kv(d, [
+        ("Serial No.", ""),
+        ("Police Station", ""),
+    ])
+
+    _heading(d, "To")
+    _kv(d, [
+        ("Name of the Accused / Noticee", ", ".join(facts.accused) or _BLANK),
+        ("Last known Address", facts.location or _BLANK),
+        ("Phone No. / Email ID (if any)", ""),
+    ])
+
+    _para(d, f"In pursuance of sub-section (3) of section 35 of the Bharatiya "
+             f"Nagarik Suraksha Sanhita, 2023, it is hereby informed that during the "
+             f"investigation of FIR / Case No. {case_number or _BLANK} dated "
+             f"{(facts.dates[0] if facts.dates else _BLANK)} u/s {us} registered at "
+             f"Police Station {_BLANK}, it is revealed that there are reasonable "
+             f"grounds to question you to ascertain facts and circumstances in "
+             f"relation to the present investigation.")
+
+    _heading(d, "Direction to Appear")
+    _para(d, f"You are therefore directed to appear before me at {_BLANK} AM/PM "
+             f"on {_BLANK} at {_BLANK} Police Station.")
+
+    _signoff(d, [["Officer In charge", "Name and Designation, Police Station"],
+                 ["(Seal)", ""]])
+
+
 _BUILDERS = {
     "chargesheet": _build_chargesheet,
     "remand_request": _build_remand_request,
@@ -534,6 +574,7 @@ _BUILDERS = {
     "medical_treatment_letter": _build_medical_treatment_letter,
     "face_identification_form": _build_face_identification_form,
     "lers_request": _build_lers_request,
+    "appearance_notice": _build_appearance_notice,
 }
 
 

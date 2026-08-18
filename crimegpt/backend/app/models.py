@@ -18,7 +18,7 @@ DocType = Literal[
     "chargesheet", "remand_request", "seizure_receipt",
     "court_custody_letter", "accused_panchanama",
     "medical_treatment_letter", "face_identification_form",
-    "lers_request",
+    "lers_request", "appearance_notice",
 ]
 
 # Role-based access (P4): Investigating Officer, Station House Officer, Legal Advisor.
