@@ -7,7 +7,13 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
-LegalCode = Literal["BNS", "BNSS", "BSA"]
+# The three general codes plus the special acts that create offences a real FIR is
+# actually charged under (bribery -> PC Act, online fraud -> IT Act, narcotics ->
+# NDPS). Kept in step with the CHECK constraints in db/schema.sql.
+LegalCode = Literal[
+    "BNS", "BNSS", "BSA",
+    "PC Act", "IT Act", "NDPS Act", "Arms Act", "POCSO",
+]
 DocType = Literal[
     "chargesheet", "remand_request", "seizure_receipt",
     "court_custody_letter", "accused_panchanama",
@@ -137,6 +143,20 @@ class DiaryEntry(BaseModel):
     occurred_at: datetime
     actor: str = "system"
     source: str = "system"
+
+
+class AuditEntry(BaseModel):
+    """One append-only audit row. `before`/`after` carry the changed state so the
+    officer can see WHAT changed, not just that something did."""
+
+    id: UUID
+    action: str
+    actor: str
+    case_id: UUID | None = None
+    doc_id: UUID | None = None
+    before: dict[str, Any] | None = None
+    after: dict[str, Any] | None = None
+    occurred_at: datetime
 
 
 class DiaryCreate(BaseModel):

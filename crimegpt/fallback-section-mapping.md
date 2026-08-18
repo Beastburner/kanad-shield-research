@@ -1,11 +1,17 @@
 # CrimeGPT — Fallback Section Mapping (Demo Safety-Net)
 
 > Curated, source-verified lookup table: common crime → correct **BNS** section (substantive)
-> + relevant **BNSS** (procedure) + **BSA** (evidence). If the LLM classifier misfires live,
-> the system falls back to this table. Every BNS number below was checked against the NCRB BNS
-> compendium / India Code / a bare-act source (URLs at bottom).
+> or **special-act** section, + relevant **BNSS** (procedure) + **BSA** (evidence). If the LLM
+> classifier misfires live, the system falls back to this table. Every number below was checked
+> against the NCRB BNS compendium / India Code / a bare-act source (URLs at bottom).
 >
-> ⚠️ Use only BNS/BNSS/BSA. NEVER IPC/CrPC/Evidence Act.
+> Implemented in `backend/app/pipeline/fallback.py` (29 crime categories). The keyword triggers
+> are matched against the **raw FIR narrative** as well as the extracted facts, so the net still
+> fires when the extraction stage misfires. `a + b` in a trigger list means both terms must be
+> present.
+>
+> ⚠️ Charge only from codes IN FORCE: BNS/BNSS/BSA and the special acts below.
+> NEVER IPC/CrPC/Evidence Act — those appear only as the `old_code_ref` cross-reference.
 > ⚠️ This is a *suggestion* aid; final charge is the IO's call. Label all output
 > "AI-assisted draft — officer review required."
 
@@ -44,6 +50,24 @@ For charging, cite the punishment/offence section.
 | 8 | **Cybercrime / online fraud** (UPI scam, phishing, fake site, digital-arrest scam) | **318** Cheating (core fraud); **319** Cheating by personation (fake identity/site) **+ IT Act 2000 ss.66C identity theft / 66D cheating by personation using computer resource** (special law, cite alongside BNS) | 193; 105 (e-seizure) | **61, 62, 63** electronic record + **s.63 certificate** mandatory |
 | 9 | **Forgery** | **336** Forgery (336(2) to harm reputation; 336(3) forgery of document); **338** Forgery of valuable security/will; **340** Forged document/electronic record + using it as genuine (340(2)) | 193 | 61–63 (document/electronic exam) |
 | 10 | **Extortion** (delivery of property by putting in fear) | **308** Extortion (308(2) base; aggravated 308(3)–(7) for fear of death/grievous hurt etc.) | 187 remand; 193 | 61–63 (recorded demands) |
+
+| 11 | **Murder / culpable homicide** | **101** Murder (definition); **103** Punishment for murder (103(2) mob lynching); **105** Culpable homicide not amounting to murder | 187 remand; 193 | 61–63 (MLC/post-mortem, CCTV) |
+| 12 | **Attempt to murder** | **109** Attempt to murder | 187; 193 | 61–63 |
+| 13 | **Kidnapping / abduction** | **137** Kidnapping; **140** Kidnapping or abduction for murder/ransom/specified purposes | 187; 193 | 61–63 (call records, ransom calls + **s.63 certificate**) |
+| 14 | **Rape / sexual offence (adult victim)** | **64** Punishment for rape; **69** Sexual intercourse by deceitful means; **74** Assault/criminal force on woman with intent to outrage modesty; **79** Word/gesture/act insulting modesty | 187; 193 | 61–63 (MLC, electronic records) |
+| 15 | **Sexual offence against a child** | **POCSO 4** Penetrative sexual assault; **POCSO 6** Aggravated form; **POCSO 8** Sexual assault; **POCSO 12** Sexual harassment (read with BNS 64/74 as applicable) | 187; 193 | 61–63 |
+| 16 | **Child sexual abuse material** | **IT Act 67B** (child sexually explicit material in electronic form); **POCSO 12** | 193; 105 (e-seizure) | **61, 62, 63** + **s.63 certificate** |
+| 17 | **Dowry death / cruelty to wife** | **80** Dowry death; **85** Cruelty by husband or his relative | 187; 193 | 61–63 (messages, medical) |
+| 18 | **Rioting / unlawful assembly** | **189** Unlawful assembly; **191** Rioting | 193 | 61–63 (video of the incident) |
+| 19 | **Mischief / arson** | **324** Mischief; **326** Mischief by fire or explosive / damaging property | 105/106 seizure; 193 | 61–63 |
+| 20 | **Criminal conspiracy** | **61** Criminal conspiracy (charged with the substantive offence) | 193 | 61–63 (chats, call records) |
+| 21 | **Organised crime** | **111** Organised crime; **112** Petty organised crime | 187; 193 | 61–63 |
+| 22 | **Hacking / unauthorised access** | **IT Act 66** Computer-related offences (read with s.43); **IT Act 66C** Identity theft | 193; 105 (e-seizure of devices/logs) | **61, 62, 63** + **s.63 certificate** |
+| 23 | **Obscene material online** | **IT Act 67** Publishing/transmitting obscene material in electronic form | 193 | 61–63 + **s.63 certificate** |
+| 24 | **Bribery / corruption by public servant** | **PC Act 7** Public servant being bribed; **PC Act 7A** Taking undue advantage to influence a public servant; **PC Act 8** Bribing a public servant (giver's side) | 187; 193 (PC Act cases: sanction + Special Judge) | 61–63 (trap recordings + **s.63 certificate**) |
+| 25 | **Disproportionate assets / criminal misconduct** | **PC Act 13** Criminal misconduct (13(1)(a) misappropriation, 13(1)(b) illicit enrichment); punishment 13(2) | 193 | 61–63 (financial records) |
+| 26 | **Narcotics** | **NDPS 8** Prohibition of operations; **NDPS 20** Cannabis (ganja/charas); **NDPS 21** Manufactured drugs; **NDPS 22** Psychotropic substances. Punishment is graded small / intermediate / commercial quantity — record the quantity. | 187; 193; NDPS 42/43 search & seizure, **52A** sampling | 61–63 (FSL report, seizure video) |
+| 27 | **Unlicensed firearm** | **Arms Act 25** Possession/acquisition without licence (25(1B)(a)); **Arms Act 27** Using arms | 187; 193 | 61–63 (FSL ballistics) |
 
 ---
 

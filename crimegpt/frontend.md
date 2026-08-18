@@ -37,7 +37,7 @@ setup). Recommended concrete stack:
 | i18n | **`react-i18next`** | for the GU/HI/EN UI (see §5) |
 | Forms | `react-hook-form` | the editable facts form |
 
-> Backend stack (FYI, you don't touch it): FastAPI + PostgreSQL/pgvector + Groq LLaMA-3.3-70B +
+> Backend stack (FYI, you don't touch it): FastAPI + PostgreSQL/pgvector + Groq gpt-oss-120B +
 > docxtpl. It already aligns with the PS suggested backend (Flask/Django family) and DB (PostgreSQL).
 
 ---

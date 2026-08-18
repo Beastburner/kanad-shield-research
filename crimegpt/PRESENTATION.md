@@ -52,7 +52,7 @@ Documentation and Legal Intelligence**
 ## Slide 6 — Architecture (one clean diagram)
 - FIR → [Extraction] → [Classification + RAG over BNS/BNSS/BSA corpus + Indian
   Kanoon] → [Validation] → [Document Generation] → SHA-256 + s.63 + audit/diary.
-- Stack chips: FastAPI · Groq LLaMA-3.3-70B · PostgreSQL + pgvector · python-docx ·
+- Stack chips: FastAPI · Groq gpt-oss-120B (open-weight) · PostgreSQL + pgvector · python-docx ·
   Tesseract OCR · OpenCV · React + MUI.
 - **Notes:** Point, don't read. 15 seconds. Then move to the demo.
 

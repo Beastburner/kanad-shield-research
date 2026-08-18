@@ -2,8 +2,14 @@ import axios from 'axios';
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
+// Timeout deliberately generous rather than absent. The analyze endpoint runs
+// three LLM stages and can legitimately take 30-60s, so a conventional 10s ceiling
+// would abort valid work. But with NO timeout at all, a cold Render free-tier
+// instance left the officer on a spinner indefinitely with no error and no way to
+// tell a slow request from a dead one.
 export const apiClient = axios.create({
   baseURL: BASE_URL,
+  timeout: 120_000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -60,11 +66,19 @@ export interface FactsResponse {
   facts: FactsBlob;
 }
 
+// The three general codes plus the special acts a real FIR is charged under
+// (bribery -> PC Act, online fraud -> IT Act, narcotics -> NDPS).
+export type LegalCode =
+  | 'BNS' | 'BNSS' | 'BSA'
+  | 'PC Act' | 'IT Act' | 'NDPS Act' | 'Arms Act' | 'POCSO';
+
 export interface LegalSection {
-  code: 'BNS' | 'BNSS' | 'BSA';
+  code: LegalCode;
   section_no: string;
   heading: string;
-  old_code_ref: string;
+  // null for special acts — they are in force, so there is no repealed
+  // IPC/CrPC equivalent to cross-reference.
+  old_code_ref: string | null;
   confidence: number;
   rationale: string;
   statute_chunk_id?: string;
@@ -110,6 +124,17 @@ export interface DiaryEvent {
   occurred_at: string;
   actor: string;
   source: 'system' | 'officer';
+}
+
+export interface AuditEntry {
+  id: string;
+  action: string;
+  actor: string;
+  case_id: string | null;
+  doc_id: string | null;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  occurred_at: string;
 }
 
 export interface Evidence {
@@ -252,6 +277,11 @@ export const api = {
   // Diary
   getDiary: async (caseId: string): Promise<DiaryEvent[]> => {
     const response = await apiClient.get<DiaryEvent[]>(`/cases/${caseId}/diary`);
+    return response.data;
+  },
+
+  getAuditLog: async (caseId: string): Promise<AuditEntry[]> => {
+    const response = await apiClient.get<AuditEntry[]>(`/cases/${caseId}/audit`);
     return response.data;
   },
 

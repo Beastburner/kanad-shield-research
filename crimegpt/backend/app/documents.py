@@ -32,8 +32,12 @@ _DOC_META: dict[str, tuple[str, str]] = {
                        "Under Section 187, Bharatiya Nagarik Suraksha Sanhita, 2023"),
     "seizure_receipt": ("SEIZURE MEMO / PANCHNAMA",
                         "Under Sections 103, 105 & 106, Bharatiya Nagarik Suraksha Sanhita, 2023"),
+    # s.187 is the detention/custody provision the remand application already cites;
+    # judicial custody is authorised under s.187(2). An earlier "r/w Section 190"
+    # here was unverified and inconsistent with that — narrowed rather than guessed
+    # at. HAVE AN OFFICER CONFIRM the sub-section before this goes to a court.
     "court_custody_letter": ("LETTER FOR JUDICIAL (COURT) CUSTODY",
-                             "Under Section 190 r/w Section 187, Bharatiya Nagarik Suraksha Sanhita, 2023"),
+                             "Under Section 187(2), Bharatiya Nagarik Suraksha Sanhita, 2023"),
     "accused_panchanama": ("ARREST PANCHNAMA",
                            "Under Section 105, Bharatiya Nagarik Suraksha Sanhita, 2023"),
     "medical_treatment_letter": ("REQUISITION FOR MEDICAL EXAMINATION / TREATMENT",
@@ -445,6 +449,18 @@ def _build_face_identification_form(d, facts, sections, case_number):
     _heading(d, "Identified By (witness)")
     _table(d, ["Name & Address", "Relation to case", "Signature"],
            [[_BLANK, "", ""]])
+
+    # Stated on the document itself, not just in our docs. A form titled "face
+    # identification" carrying a witness-identification table reads like a Test
+    # Identification Parade record — and a TIP held in police presence carries no
+    # evidentiary value. Saying so plainly protects the investigation and shows the
+    # distinction is understood.
+    _heading(d, "Status of this record")
+    _para(d, "This is an internal investigation aid recording the descriptive roll of "
+             "the accused. It is NOT a Test Identification Parade. A TIP must be "
+             "conducted under the direction of, and in the presence of, a Magistrate; "
+             "an identification carried out in police presence has no evidentiary "
+             "value and this form must not be tendered as one.")
 
     _signoff(d, [["Investigating Officer", "Name & Rank, Police Station"]])
 

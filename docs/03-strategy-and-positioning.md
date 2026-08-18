@@ -72,6 +72,7 @@ Pitch line: *"Our system never presents a single LLM's output directly."*
 ## What Makes Us Credible (team assets to leverage)
 
 - **PRISM** — multi-agent orchestration, Groq + LLaMA 3.3-70B (reuse for CrimeGPT pipeline).
+  Note: LLaMA-3.3-70B has since been retired by Groq; CrimeGPT runs gpt-oss-120B.
 - **LazyCook** — proven 4-stage refinement pattern (the anti-hallucination spine).
 - **VERONICA** — FastAPI + local LLM + RAG memory (reuse RAG retrieval pattern).
 - **ServiSync** — React + Leaflet + Node/MySQL (reuse for any mapping/dashboard).

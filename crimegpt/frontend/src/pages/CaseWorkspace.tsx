@@ -26,7 +26,13 @@ import {
   Tooltip,
   Dialog,
   DialogTitle,
-  DialogContent
+  DialogContent,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow
 } from '@mui/material';
 import {
   ArrowLeft,
@@ -48,13 +54,16 @@ import {
   Image as ImageIcon,
   ScanFace,
   Upload,
-  Lock
+  Lock,
+  ShieldCheck
 } from 'lucide-react';
-import { api, type Case, type FactsBlob, type LegalSection, type Judgment, type DocumentResponse, type DiaryEvent, type Evidence, type FaceMatchResult } from '../api';
+import { api, type Case, type FactsBlob, type LegalSection, type Judgment, type DocumentResponse, type DiaryEvent, type Evidence, type FaceMatchResult, type AuditEntry } from '../api';
 import { useActor } from '../useActor';
+import { MONO_FONT } from '../theme';
 
 // Simple Translate Widget Component
 function TranslatingText({ text, activeLang }: { text: string; activeLang: string }) {
+  const { t } = useTranslation();
   const [translatedText, setTranslatedText] = useState<string | null>(null);
   const [translating, setTranslating] = useState(false);
 
@@ -85,18 +94,18 @@ function TranslatingText({ text, activeLang }: { text: string; activeLang: strin
             variant="text" 
             startIcon={translating ? <CircularProgress size={12} /> : <Languages size={12} />} 
             onClick={() => handleTranslate('hi')}
-            sx={{ fontSize: '0.75rem', p: 0, minWidth: 0, color: 'text.secondary' }}
+            sx={{ fontSize: '0.75rem', minHeight: 44, py: 0.75, px: 1, color: 'text.secondary' }}
           >
-            Translate to Hindi
+            {t('translateToHindi')}
           </Button>
           <Button 
             size="small" 
             variant="text" 
             startIcon={translating ? <CircularProgress size={12} /> : <Languages size={12} />} 
             onClick={() => handleTranslate('gu')}
-            sx={{ fontSize: '0.75rem', p: 0, minWidth: 0, color: 'text.secondary' }}
+            sx={{ fontSize: '0.75rem', minHeight: 44, py: 0.75, px: 1, color: 'text.secondary' }}
           >
-            Translate to Gujarati
+            {t('translateToGujarati')}
           </Button>
         </Box>
       </Box>
@@ -106,15 +115,15 @@ function TranslatingText({ text, activeLang }: { text: string; activeLang: strin
   return (
     <Box>
       {translatedText ? (
-        <Box sx={{ bgcolor: 'rgba(6, 182, 212, 0.05)', p: 1.5, borderRadius: 1.5, borderLeft: '3px solid #06b6d4' }}>
+        <Box sx={{ bgcolor: 'rgba(var(--mui-palette-primary-mainChannel) / 0.08)', p: 1.5, borderRadius: 1, borderLeft: '3px solid', borderLeftColor: 'primary.main' }}>
           <Typography variant="body2" sx={{ fontStyle: 'italic' }}>{translatedText}</Typography>
           <Button 
             size="small" 
             variant="text" 
             onClick={() => setTranslatedText(null)}
-            sx={{ fontSize: '0.72rem', mt: 0.5, p: 0, minWidth: 0, color: 'text.secondary' }}
+            sx={{ fontSize: '0.72rem', mt: 0.5, minHeight: 44, py: 0.75, px: 1, color: 'text.secondary' }}
           >
-            Show Original English
+            {t('showOriginal')}
           </Button>
         </Box>
       ) : (
@@ -125,9 +134,9 @@ function TranslatingText({ text, activeLang }: { text: string; activeLang: strin
             variant="text" 
             startIcon={translating ? <CircularProgress size={12} /> : <Languages size={12} />} 
             onClick={() => handleTranslate(activeLang as 'hi' | 'gu')}
-            sx={{ fontSize: '0.75rem', mt: 0.5, p: 0, minWidth: 0 }}
+            sx={{ fontSize: '0.75rem', mt: 0.5, minHeight: 44, py: 0.75, px: 1 }}
           >
-            Translate rationale to {activeLang === 'gu' ? 'Gujarati' : 'Hindi'}
+            {t('translateRationale')}
           </Button>
         </Box>
       )}
@@ -151,6 +160,7 @@ export default function CaseWorkspace() {
   const [judgments, setJudgments] = useState<Judgment[]>([]);
   const [documents, setDocuments] = useState<DocumentResponse[]>([]);
   const [diary, setDiary] = useState<DiaryEvent[]>([]);
+  const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
   const [analysisConfidence, setAnalysisConfidence] = useState(0);
   const [reviewRequired, setReviewRequired] = useState(false);
   const [validationConcerns, setValidationConcerns] = useState<string[]>([]);
@@ -258,6 +268,14 @@ export default function CaseWorkspace() {
         console.error('Error fetching diary', err);
       }
 
+      // Fetch the append-only audit trail (chain of custody)
+      try {
+        const auditData = await api.getAuditLog(id);
+        setAuditLog(auditData);
+      } catch (err) {
+        console.error('Error fetching audit log', err);
+      }
+
       // Fetch Documents
       try {
         const docsData = await api.listDocuments(id);
@@ -337,10 +355,14 @@ export default function CaseWorkspace() {
       }
 
       // Update case diary
-      const diaryData = await api.getDiary(id);
-      setDiary(diaryData);
+      await refreshTrail();
 
-      setSuccess('AI Legal analysis complete!');
+      // Only the genuine can't-stand-behind-it case gets the hedged wording; a
+      // validator caveat is reported by the notes banner, not by demoting the
+      // success toast on an analysis that passed.
+      setSuccess(res.review_required
+        ? 'Analysis complete — read the review notes above before relying on it.'
+        : 'AI Legal analysis complete!');
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       console.error(err);
@@ -348,6 +370,19 @@ export default function CaseWorkspace() {
     } finally {
       setAnalyzing(false);
     }
+  };
+
+  // Every mutating endpoint writes BOTH a diary entry and an audit row, so the two
+  // are always refetched together — refreshing only the diary left the Audit tab
+  // showing stale data until a full page reload.
+  const refreshTrail = async () => {
+    if (!id) return;
+    const [diaryData, auditData] = await Promise.all([
+      api.getDiary(id),
+      api.getAuditLog(id),
+    ]);
+    setDiary(diaryData);
+    setAuditLog(auditData);
   };
 
   const handleSaveFacts = async () => {
@@ -360,8 +395,7 @@ export default function CaseWorkspace() {
       setSuccess('Facts updated and logged to audit trail.');
       
       // Refresh timeline
-      const diaryData = await api.getDiary(id);
-      setDiary(diaryData);
+      await refreshTrail();
       
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
@@ -389,8 +423,7 @@ export default function CaseWorkspace() {
       // Refresh documents and timeline
       const docsData = await api.listDocuments(id);
       setDocuments(docsData);
-      const diaryData = await api.getDiary(id);
-      setDiary(diaryData);
+      await refreshTrail();
       
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
@@ -424,8 +457,7 @@ export default function CaseWorkspace() {
       setError(null);
       await api.addDiaryEntry(id, diaryNote.trim());
       setDiaryNote('');
-      const diaryData = await api.getDiary(id);
-      setDiary(diaryData);
+      await refreshTrail();
       setSuccess('Diary entry logged.');
       setTimeout(() => setSuccess(null), 2500);
     } catch (err: any) {
@@ -447,8 +479,7 @@ export default function CaseWorkspace() {
       setEvTags('');
       const evData = await api.listEvidence(id);
       setEvidence(evData);
-      const diaryData = await api.getDiary(id);
-      setDiary(diaryData);
+      await refreshTrail();
       setSuccess('Evidence uploaded and hashed.');
       setTimeout(() => setSuccess(null), 2500);
     } catch (err: any) {
@@ -508,7 +539,7 @@ export default function CaseWorkspace() {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh', flexDirection: 'column', gap: 2 }}>
         <CircularProgress size={50} color="primary" />
-        <Typography color="text.secondary">Fetching case details...</Typography>
+        <Typography color="text.secondary">{t('loadingCase')}</Typography>
       </Box>
     );
   }
@@ -523,14 +554,14 @@ export default function CaseWorkspace() {
   }
 
   const documentTypes = [
-    { type: 'chargesheet', label: 'Chargesheet', desc: 'Main police report containing facts, sections, and evidence.' },
-    { type: 'remand_request', label: 'Remand Request', desc: 'Required to hold the accused in custody for interrogation.' },
-    { type: 'seizure_receipt', label: 'Seizure Receipt', desc: 'Receipt issued for properties or cash seized during investigation.' },
-    { type: 'court_custody_letter', label: 'Court Custody Letter', desc: 'Formal request to transfer the accused to judicial custody.' },
-    { type: 'accused_panchanama', label: 'Accused Panchanama', desc: 'Witness-verified record of items found on the accused.' },
-    { type: 'medical_treatment_letter', label: 'Medical Treatment Letter', desc: 'Authorized letter requesting medical checks for accused.' },
-    { type: 'face_identification_form', label: 'Face Identification Form', desc: 'Mock face match integrity and verification report.' },
-    { type: 'lers_request', label: 'Meta/WhatsApp LERS Request', desc: 'Law-enforcement data request to Meta (FB/IG/WhatsApp) under BNSS s.94.' }
+    { type: 'chargesheet', label: t('docChargesheet'), desc: t('docChargesheetDesc') },
+    { type: 'remand_request', label: t('docRemand'), desc: t('docRemandDesc') },
+    { type: 'seizure_receipt', label: t('docSeizure'), desc: t('docSeizureDesc') },
+    { type: 'court_custody_letter', label: t('docCustody'), desc: t('docCustodyDesc') },
+    { type: 'accused_panchanama', label: t('docPanchanama'), desc: t('docPanchanamaDesc') },
+    { type: 'medical_treatment_letter', label: t('docMedical'), desc: t('docMedicalDesc') },
+    { type: 'face_identification_form', label: t('docFaceId'), desc: t('docFaceIdDesc') },
+    { type: 'lers_request', label: t('docLers'), desc: t('docLersDesc') }
   ];
 
   return (
@@ -538,12 +569,12 @@ export default function CaseWorkspace() {
       {/* Header section */}
       <Box sx={{ mb: 4, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <IconButton onClick={() => navigate('/')} sx={{ color: 'text.secondary', bgcolor: 'rgba(255,255,255,0.03)' }}>
+          <IconButton onClick={() => navigate('/')} aria-label={t('backToDashboard')} sx={{ color: 'text.secondary', bgcolor: 'action.hover' }}>
             <ArrowLeft size={20} />
           </IconButton>
           <Box>
-            <Typography variant="h5" sx={{ fontWeight: 800, color: 'text.primary', mb: 0.5 }}>
-              Case Workspace: {caseObj?.case_number || 'Unnamed Case'}
+            <Typography variant="h5" component="h1" sx={{ fontWeight: 800, color: 'text.primary', mb: 0.5 }}>
+              {t('caseWorkspace')}: {caseObj?.case_number || t('unnamedCase')}
             </Typography>
             <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
               <Chip label={`ID: ${caseObj?.id.substring(0, 8)}...`} size="small" variant="outlined" sx={{ color: 'text.secondary' }} />
@@ -556,7 +587,7 @@ export default function CaseWorkspace() {
                 }
               />
               <Typography variant="caption" color="text.secondary">
-                Registered: {new Date(caseObj?.created_at || '').toLocaleString()}
+                {t('registered')}: {new Date(caseObj?.created_at || '').toLocaleString()}
               </Typography>
             </Box>
           </Box>
@@ -569,12 +600,14 @@ export default function CaseWorkspace() {
                 {t('confidence')}
               </Typography>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <LinearProgress 
-                  variant="determinate" 
-                  value={analysisConfidence * 100} 
-                  sx={{ width: 100, height: 6, borderRadius: 3, bgcolor: 'rgba(255,255,255,0.1)', '& .MuiLinearProgress-bar': { bgcolor: analysisConfidence > 0.6 ? '#10b981' : '#f59e0b' } }} 
+                <LinearProgress
+                  variant="determinate"
+                  value={analysisConfidence * 100}
+                  aria-label={t('confidence')}
+                  aria-valuetext={`${Math.round(analysisConfidence * 100)} percent`}
+                  sx={{ width: 100, height: 6, borderRadius: 3, '& .MuiLinearProgress-bar': { bgcolor: analysisConfidence > 0.6 ? 'success.main' : 'warning.main' } }} 
                 />
-                <Typography variant="body2" sx={{ fontWeight: 700, color: analysisConfidence > 0.6 ? '#10b981' : '#f59e0b' }}>
+                <Typography variant="body2" sx={{ fontWeight: 700, color: analysisConfidence > 0.6 ? 'success.main' : 'warning.main' }}>
                   {Math.round(analysisConfidence * 100)}%
                 </Typography>
               </Box>
@@ -589,7 +622,7 @@ export default function CaseWorkspace() {
             onClick={handleRunAnalysis}
             disabled={analyzing}
           >
-            {caseObj?.status === 'new' ? 'Run AI Analysis' : t('reanalyze')}
+            {caseObj?.status === 'new' ? t('runAnalysis') : t('reanalyze')}
           </Button>
         </Box>
       </Box>
@@ -597,7 +630,7 @@ export default function CaseWorkspace() {
       {/* Read-only role banner (P4) */}
       {!canWrite && (
         <Alert severity="info" icon={<Lock size={20} />} sx={{ mb: 3, borderRadius: 2 }}>
-          You are signed in as <strong>Legal Advisor</strong> (read & legal-analysis only). Fact edits, document filing and evidence upload are disabled — switch role in the header to act as IO/SHO.
+          {t('readOnlyBanner')}
         </Alert>
       )}
 
@@ -613,13 +646,25 @@ export default function CaseWorkspace() {
         </Alert>
       )}
 
-      {/* Review Banner if required */}
-      {reviewRequired && (
-        <Alert severity="warning" icon={<ShieldAlert size={28} />} sx={{ mb: 4, borderRadius: 3, border: '1px solid rgba(245, 158, 11, 0.3)', bgcolor: 'rgba(245, 158, 11, 0.05)' }}>
-          <AlertTitle sx={{ fontWeight: 700, fontSize: '1.05rem' }}>{t('officerReview')} Required</AlertTitle>
+      {/* Two distinct states, deliberately not merged into one banner:
+          - reviewRequired  -> the pipeline cannot stand behind this result (the AI
+            stages failed, or confidence fell below threshold). Warn hard.
+          - concerns only   -> the analysis is sound but the validator recorded a
+            caveat worth reading. Surface it, do not cry wolf.
+          Showing "PROCEED WITH CAUTION" on a 95%-confidence result would train the
+          officer to ignore the banner that actually matters. */}
+      {(reviewRequired || validationConcerns.length > 0) && (
+        <Alert
+          severity={reviewRequired ? 'warning' : 'info'}
+          icon={<ShieldAlert size={28} />}
+          sx={{ mb: 4, borderRadius: 1 }}
+        >
+          <AlertTitle sx={{ fontWeight: 700, fontSize: '1.05rem' }}>
+            {reviewRequired ? t('officerReview') : t('validatorNotes')}
+          </AlertTitle>
           <Box sx={{ mt: 1 }}>
             <Typography variant="body2" sx={{ mb: 1.5, fontWeight: 500 }}>
-              The legal classifier flagged concerns regarding the statutory boundary limits:
+              {reviewRequired ? t('reviewIntro') : t('concernsIntro')}
             </Typography>
             <List dense sx={{ listStyleType: 'disc', pl: 3, py: 0 }}>
               {validationConcerns.map((c, i) => (
@@ -629,7 +674,7 @@ export default function CaseWorkspace() {
               ))}
             </List>
             <Typography variant="caption" sx={{ display: 'block', mt: 2, fontWeight: 700, letterSpacing: '0.5px' }}>
-              PROCEED WITH CAUTION: {disclaimer}
+              {reviewRequired ? `${t('proceedCaution')}: ${disclaimer}` : disclaimer}
             </Typography>
           </Box>
         </Alert>
@@ -638,16 +683,16 @@ export default function CaseWorkspace() {
       {/* Primary Workspace Sections */}
       {!facts ? (
         /* Gating: Analysis hasn't run yet */
-        <Card sx={{ background: '#111827', py: 6, px: 4, textAlign: 'center', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+        <Card sx={{ py: 6, px: 4, textAlign: 'center' }}>
           <CardContent>
             <Box sx={{ mb: 3, color: 'primary.main', display: 'flex', justifyContent: 'center' }}>
               <Scale size={64} />
             </Box>
             <Typography variant="h5" sx={{ fontWeight: 700, mb: 2 }}>
-              Case Fact Extraction & Analysis Required
+              {t('analysisRequiredTitle')}
             </Typography>
             <Typography color="text.secondary" sx={{ maxWidth: 600, mx: 'auto', mb: 4 }}>
-              The FIR narrative must be processed by the LLM classification pipeline to extract structured fact fields (complainant, accused, dates) and match applicable BNS sections before legal documents can be generated.
+              {t('analysisRequiredBody')}
             </Typography>
             <Button
               id="btn-run-analysis"
@@ -659,7 +704,7 @@ export default function CaseWorkspace() {
               startIcon={analyzing ? <CircularProgress size={20} color="inherit" /> : <Scale size={20} />}
               sx={{ px: 4, py: 1.5 }}
             >
-              {analyzing ? t('analyzing') : 'Execute AI Pipeline'}
+              {analyzing ? t('analyzing') : t('executePipeline')}
             </Button>
           </CardContent>
         </Card>
@@ -673,18 +718,19 @@ export default function CaseWorkspace() {
               variant="scrollable"
               scrollButtons="auto"
             >
-              <Tab label="1. Facts Extraction" id="tab-facts" icon={<Briefcase size={16} />} iconPosition="start" />
-              <Tab label="2. Legal Classification" id="tab-legal" icon={<Scale size={16} />} iconPosition="start" />
-              <Tab label="3. Legal Documents" id="tab-docs" icon={<FileCheck size={16} />} iconPosition="start" />
-              <Tab label="4. Case Diary (Timeline)" id="tab-timeline" icon={<Calendar size={16} />} iconPosition="start" />
-              <Tab label="5. Evidence & Face Match" id="tab-evidence" icon={<ImageIcon size={16} />} iconPosition="start" />
-              <Tab label="6. Mock Integrations & Tools" id="tab-mocks" icon={<Globe size={16} />} iconPosition="start" />
+              <Tab label={`1. ${t('tabFacts')}`} id="tab-facts" aria-controls="tabpanel-0" icon={<Briefcase size={16} />} iconPosition="start" />
+              <Tab label={`2. ${t('tabLegal')}`} id="tab-legal" aria-controls="tabpanel-1" icon={<Scale size={16} />} iconPosition="start" />
+              <Tab label={`3. ${t('tabDocs')}`} id="tab-docs" aria-controls="tabpanel-2" icon={<FileCheck size={16} />} iconPosition="start" />
+              <Tab label={`4. ${t('tabDiary')}`} id="tab-timeline" aria-controls="tabpanel-3" icon={<Calendar size={16} />} iconPosition="start" />
+              <Tab label={`5. ${t('tabEvidence')}`} id="tab-evidence" aria-controls="tabpanel-4" icon={<ImageIcon size={16} />} iconPosition="start" />
+              <Tab label={`6. ${t('tabMocks')}`} id="tab-mocks" aria-controls="tabpanel-5" icon={<Globe size={16} />} iconPosition="start" />
+              <Tab label={`7. ${t('tabAudit')}`} id="tab-audit" aria-controls="tabpanel-6" icon={<ShieldCheck size={16} />} iconPosition="start" />
             </Tabs>
           </Box>
 
           {/* TAB 1: FACTS EXTRACTION */}
           {tabValue === 0 && (
-            <Card sx={{ background: '#111827' }}>
+            <Card role="tabpanel" id="tabpanel-0" aria-labelledby="tab-facts">
               <CardContent sx={{ p: 4 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 2 }}>
                   <Typography variant="h6" sx={{ fontWeight: 700 }}>
@@ -698,17 +744,17 @@ export default function CaseWorkspace() {
                     onClick={handleSaveFacts}
                     disabled={savingFacts || !canWrite}
                   >
-                    {savingFacts ? 'Saving...' : t('saveFacts')}
+                    {savingFacts ? t('saving') : t('saveFacts')}
                   </Button>
                 </Box>
                 
                 <Alert severity="info" sx={{ mb: 4, borderRadius: 2 }}>
-                  Verify the LLM-extracted facts below. Officers can modify names, dates, items, or locations. Save corrections to update court documents.
+                  {t('factsVerifyHint')}
                 </Alert>
 
                 <Grid container spacing={3}>
                   <Grid size={{ xs: 12, md: 6 }}>
-                    <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>Complainant Name</Typography>
+                    <Typography component="label" htmlFor="fact-complainant" variant="subtitle2" sx={{ mb: 1, fontWeight: 700, display: 'block' }}>{t('complainantName')}</Typography>
                     <TextField
                       fullWidth
                       id="fact-complainant"
@@ -718,7 +764,7 @@ export default function CaseWorkspace() {
                   </Grid>
 
                   <Grid size={{ xs: 12, md: 6 }}>
-                    <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>{t('location')}</Typography>
+                    <Typography component="label" htmlFor="fact-location" variant="subtitle2" sx={{ mb: 1, fontWeight: 700, display: 'block' }}>{t('location')}</Typography>
                     <TextField
                       fullWidth
                       id="fact-location"
@@ -743,15 +789,16 @@ export default function CaseWorkspace() {
                             id={`fact-accused-${idx}`}
                             size="small"
                             value={val}
+                            slotProps={{ htmlInput: { 'aria-label': `Accused ${idx + 1}` } }}
                             onChange={(e) => handleFactArrayChange('accused', idx, e.target.value)}
                           />
-                          <IconButton color="error" onClick={() => removeFactArrayItem('accused', idx)}>
+                          <IconButton color="error" aria-label={`Remove accused ${idx + 1}`} onClick={() => removeFactArrayItem('accused', idx)}>
                             <Trash2 size={18} />
                           </IconButton>
                         </Box>
                       ))}
                       {facts.accused.length === 0 && (
-                        <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic', pl: 1 }}>No accused identified yet.</Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic', pl: 1 }}>{t('noAccused')}</Typography>
                       )}
                     </Box>
                   </Grid>
@@ -772,15 +819,16 @@ export default function CaseWorkspace() {
                             id={`fact-victim-${idx}`}
                             size="small"
                             value={val}
+                            slotProps={{ htmlInput: { 'aria-label': `Victim ${idx + 1}` } }}
                             onChange={(e) => handleFactArrayChange('victims', idx, e.target.value)}
                           />
-                          <IconButton color="error" onClick={() => removeFactArrayItem('victims', idx)}>
+                          <IconButton color="error" aria-label={`Remove victim ${idx + 1}`} onClick={() => removeFactArrayItem('victims', idx)}>
                             <Trash2 size={18} />
                           </IconButton>
                         </Box>
                       ))}
                       {facts.victims.length === 0 && (
-                        <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic', pl: 1 }}>No victims identified yet.</Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic', pl: 1 }}>{t('noVictims')}</Typography>
                       )}
                     </Box>
                   </Grid>
@@ -801,15 +849,16 @@ export default function CaseWorkspace() {
                             id={`fact-item-${idx}`}
                             size="small"
                             value={val}
+                            slotProps={{ htmlInput: { 'aria-label': `Item ${idx + 1}` } }}
                             onChange={(e) => handleFactArrayChange('items', idx, e.target.value)}
                           />
-                          <IconButton color="error" onClick={() => removeFactArrayItem('items', idx)}>
+                          <IconButton color="error" aria-label={`Remove item ${idx + 1}`} onClick={() => removeFactArrayItem('items', idx)}>
                             <Trash2 size={18} />
                           </IconButton>
                         </Box>
                       ))}
                       {facts.items.length === 0 && (
-                        <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic', pl: 1 }}>No items recorded.</Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic', pl: 1 }}>{t('noItems')}</Typography>
                       )}
                     </Box>
                   </Grid>
@@ -830,15 +879,16 @@ export default function CaseWorkspace() {
                             id={`fact-date-${idx}`}
                             size="small"
                             value={val}
+                            slotProps={{ htmlInput: { 'aria-label': `Date ${idx + 1}` } }}
                             onChange={(e) => handleFactArrayChange('dates', idx, e.target.value)}
                           />
-                          <IconButton color="error" onClick={() => removeFactArrayItem('dates', idx)}>
+                          <IconButton color="error" aria-label={`Remove date ${idx + 1}`} onClick={() => removeFactArrayItem('dates', idx)}>
                             <Trash2 size={18} />
                           </IconButton>
                         </Box>
                       ))}
                       {facts.dates.length === 0 && (
-                        <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic', pl: 1 }}>No dates recorded.</Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic', pl: 1 }}>{t('noDates')}</Typography>
                       )}
                     </Box>
                   </Grid>
@@ -860,15 +910,16 @@ export default function CaseWorkspace() {
                             id={`fact-event-${idx}`}
                             size="small"
                             value={val}
+                            slotProps={{ htmlInput: { 'aria-label': `Event ${idx + 1}` } }}
                             onChange={(e) => handleFactArrayChange('events', idx, e.target.value)}
                           />
-                          <IconButton color="error" onClick={() => removeFactArrayItem('events', idx)}>
+                          <IconButton color="error" aria-label={`Remove event ${idx + 1}`} onClick={() => removeFactArrayItem('events', idx)}>
                             <Trash2 size={18} />
                           </IconButton>
                         </Box>
                       ))}
                       {facts.events.length === 0 && (
-                        <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic', pl: 1 }}>No events recorded.</Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic', pl: 1 }}>{t('noEvents')}</Typography>
                       )}
                     </Box>
                   </Grid>
@@ -883,7 +934,7 @@ export default function CaseWorkspace() {
                     onClick={handleSaveFacts}
                     disabled={savingFacts || !canWrite}
                   >
-                    {savingFacts ? 'Saving Facts...' : t('saveFacts')}
+                    {savingFacts ? t('savingFactsLabel') : t('saveFacts')}
                   </Button>
                 </Box>
               </CardContent>
@@ -892,7 +943,7 @@ export default function CaseWorkspace() {
 
           {/* TAB 2: LEGAL CLASSIFICATION */}
           {tabValue === 1 && (
-            <Box>
+            <Box role="tabpanel" id="tabpanel-1" aria-labelledby="tab-legal">
               {/* Sections list */}
               <Typography variant="h6" sx={{ fontWeight: 700, mb: 3, color: 'text.primary' }}>
                 {t('sections')}
@@ -900,13 +951,13 @@ export default function CaseWorkspace() {
 
               {sections.length === 0 ? (
                 <Alert severity="info" sx={{ mb: 4, borderRadius: 2 }}>
-                  No legal sections were suggested. The analysis requires a clearer case narrative.
+                  {t('noSections')}
                 </Alert>
               ) : (
                 <Grid container spacing={3} sx={{ mb: 5 }}>
                   {sections.map((sec, idx) => (
                     <Grid size={12} key={idx}>
-                      <Card sx={{ background: '#111827', borderLeft: '4px solid #06b6d4' }}>
+                      <Card sx={{ borderLeft: '4px solid', borderLeftColor: 'primary.main' }}>
                         <CardContent sx={{ p: 3 }}>
                           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2, flexWrap: 'wrap', gap: 1 }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
@@ -920,29 +971,46 @@ export default function CaseWorkspace() {
                               </Typography>
                             </Box>
                             
-                            <Chip 
-                              label={`cf. ${sec.old_code_ref}`} 
-                              variant="outlined" 
-                              size="small"
-                              sx={{ 
-                                bgcolor: 'rgba(255,255,255,0.03)', 
-                                color: 'text.secondary',
-                                border: '1px dashed rgba(255,255,255,0.15)'
-                              }} 
-                            />
+                            {sec.old_code_ref ? (
+                              <Chip 
+                                label={sec.old_code_ref ? `cf. ${sec.old_code_ref}` : t('specialAct')} 
+                                variant="outlined" 
+                                size="small"
+                                sx={{
+                                  color: 'text.secondary',
+                                  borderStyle: 'dashed',
+                                }} 
+                              />
+                            ) : (
+                              /* Special acts (PC Act, IT Act, NDPS...) are in force —
+                                 there is no repealed IPC/CrPC section to cross-refer. */
+                              <Chip 
+                                label={t('specialAct')} 
+                                variant="outlined" 
+                                size="small"
+                                sx={{
+                                  bgcolor: 'rgba(var(--mui-palette-success-mainChannel) / 0.1)',
+                                  color: 'success.main',
+                                  borderStyle: 'dashed',
+                                  borderColor: 'rgba(var(--mui-palette-success-mainChannel) / 0.4)',
+                                }} 
+                              />
+                            )}
                           </Box>
 
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2.5 }}>
                             <Typography variant="body2" color="text.secondary" sx={{ minWidth: 80 }}>
-                              Confidence:
+                              {t('sectionConfidence')}:
                             </Typography>
                             <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                              <LinearProgress 
-                                variant="determinate" 
-                                value={sec.confidence * 100} 
-                                sx={{ flex: 1, height: 8, borderRadius: 4, bgcolor: 'rgba(255,255,255,0.05)', '& .MuiLinearProgress-bar': { bgcolor: sec.confidence > 0.7 ? '#10b981' : '#f59e0b' } }} 
+                              <LinearProgress
+                                variant="determinate"
+                                value={sec.confidence * 100}
+                                aria-label={`Confidence for ${sec.code} ${sec.section_no}`}
+                                aria-valuetext={`${Math.round(sec.confidence * 100)} percent`}
+                                sx={{ flex: 1, height: 8, borderRadius: 4, '& .MuiLinearProgress-bar': { bgcolor: sec.confidence > 0.7 ? 'success.main' : 'warning.main' } }} 
                               />
-                              <Typography variant="body2" sx={{ fontWeight: 700, color: sec.confidence > 0.7 ? '#10b981' : '#f59e0b' }}>
+                              <Typography variant="body2" sx={{ fontWeight: 700, color: sec.confidence > 0.7 ? 'success.main' : 'warning.main' }}>
                                 {Math.round(sec.confidence * 100)}%
                               </Typography>
                             </Box>
@@ -951,7 +1019,7 @@ export default function CaseWorkspace() {
                           <Divider sx={{ mb: 2 }} />
 
                           <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700, color: 'text.secondary' }}>
-                            Pipeline Classification Rationale:
+                            {t('rationaleLabel')}
                           </Typography>
                           <TranslatingText text={sec.rationale} activeLang={i18n.language} />
                         </CardContent>
@@ -967,21 +1035,21 @@ export default function CaseWorkspace() {
               </Typography>
 
               {judgments.length === 0 ? (
-                <Typography color="text.secondary" sx={{ fontStyle: 'italic', pl: 1, mb: 4 }}>No precedent Indian Kanoon judgments retrieved.</Typography>
+                <Typography color="text.secondary" sx={{ fontStyle: 'italic', pl: 1, mb: 4 }}>{t('noJudgments')}</Typography>
               ) : (
                 <Grid container spacing={3}>
                   {judgments.map((jug, idx) => (
                     <Grid size={{ xs: 12, sm: 6 }} key={idx}>
-                      <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', background: '#111827' }}>
+                      <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                         <CardContent>
                           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1.5 }}>
-                            <Typography variant="subtitle1" sx={{ fontWeight: 700, color: 'secondary.light', lineHiegth: 1.3 }}>
+                            <Typography variant="subtitle1" sx={{ fontWeight: 700, color: 'secondary.light', lineHeight: 1.3 }}>
                               {jug.title}
                             </Typography>
                             <Chip 
-                              label={`Match: ${Math.round(jug.relevance * 100)}%`} 
+                              label={`${t('match')}: ${Math.round(jug.relevance * 100)}%`} 
                               size="small" 
-                              sx={{ bgcolor: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa' }} 
+                              sx={{ bgcolor: 'rgba(var(--mui-palette-info-mainChannel) / 0.12)', color: 'info.main' }} 
                             />
                           </Box>
 
@@ -1001,24 +1069,24 @@ export default function CaseWorkspace() {
 
           {/* TAB 3: LEGAL DOCUMENTS */}
           {tabValue === 2 && (
-            <Grid container spacing={4}>
+            <Grid container spacing={4} role="tabpanel" id="tabpanel-2" aria-labelledby="tab-docs">
               {/* Document Actions */}
               <Grid size={{ xs: 12, md: 5 }}>
-                <Card sx={{ background: '#111827' }}>
+                <Card>
                   <CardContent sx={{ p: 3 }}>
                     <Typography variant="h6" sx={{ fontWeight: 700, mb: 2 }}>
-                      Draft Court Documents
+                      {t('draftDocs')}
                     </Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                      Automate document preparation. Generated templates prefill all active case facts.
+                      {t('draftDocsHint')}
                     </Typography>
                     <Alert severity="info" icon={<Languages size={16} />} sx={{ mb: 3, py: 0.5 }}>
-                      Output language: <strong>{i18n.language === 'hi' ? 'हिन्दी (Hindi)' : i18n.language === 'gu' ? 'ગુજરાતી (Gujarati)' : 'English'}</strong> — switch it from the header language selector.
+                      {t('outputLanguage')}: <strong>{i18n.language === 'hi' ? 'हिन्दी (Hindi)' : i18n.language === 'gu' ? 'ગુજરાતી (Gujarati)' : 'English'}</strong> — {t('outputLanguageHint')}
                     </Alert>
 
                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                       {documentTypes.map((doc, idx) => (
-                        <Box key={idx} sx={{ p: 1.5, border: '1px solid rgba(255,255,255,0.05)', borderRadius: 2, bgcolor: '#0f172a' }}>
+                        <Box key={idx} sx={{ p: 1.5, border: '1px solid', borderColor: 'divider', borderRadius: 1, bgcolor: 'background.default' }}>
                           <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>{doc.label}</Typography>
                           <Typography variant="caption" color="text.secondary" sx={{ mb: 1.5, display: 'block' }}>
                             {doc.desc}
@@ -1033,7 +1101,7 @@ export default function CaseWorkspace() {
                             onClick={() => handleGenerateDoc(doc.type)}
                             fullWidth
                           >
-                            {generatingDoc === doc.type ? 'Generating...' : t('generateDoc')}
+                            {generatingDoc === doc.type ? t('generating') : t('generateDoc')}
                           </Button>
                         </Box>
                       ))}
@@ -1044,21 +1112,21 @@ export default function CaseWorkspace() {
 
               {/* Generated Documents List */}
               <Grid size={{ xs: 12, md: 7 }}>
-                <Card sx={{ background: '#111827', minHeight: 400 }}>
+                <Card sx={{ minHeight: 400 }}>
                   <CardContent sx={{ p: 3 }}>
                     <Typography variant="h6" sx={{ fontWeight: 700, mb: 3 }}>
-                      Generated Documents & Evidence Certificates
+                      {t('generatedDocs')}
                     </Typography>
 
                     {documents.length === 0 ? (
-                      <Box sx={{ py: 8, textAlgin: 'center', color: 'text.secondary', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                      <Box sx={{ py: 8, textAlign: 'center', color: 'text.secondary', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                         <FileDown size={48} />
-                        <Typography sx={{ fontStyle: 'italic' }}>No court documents generated yet.</Typography>
+                        <Typography sx={{ fontStyle: 'italic' }}>{t('noDocuments')}</Typography>
                       </Box>
                     ) : (
                       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                         {documents.map((doc, idx) => (
-                          <Paper key={idx} sx={{ p: 3, background: '#0f172a', border: '1px solid rgba(255,255,255,0.05)' }}>
+                          <Paper key={idx} variant="outlined" sx={{ p: 3, bgcolor: 'background.default' }}>
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2, flexWrap: 'wrap', gap: 1 }}>
                               <Box>
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
@@ -1067,21 +1135,21 @@ export default function CaseWorkspace() {
                                   </Typography>
                                   <Chip label={`v${doc.version}`} size="small" color="primary" sx={{ height: 20, fontWeight: 700 }} />
                                   {doc.superseded
-                                    ? <Chip label="superseded" size="small" sx={{ height: 20, bgcolor: 'rgba(148,163,184,0.15)', color: '#94a3b8' }} />
-                                    : <Chip label="current" size="small" sx={{ height: 20, bgcolor: 'rgba(16,185,129,0.15)', color: '#10b981' }} />}
+                                    ? <Chip label={t('superseded')} size="small" sx={{ height: 20, bgcolor: 'action.hover', color: 'text.secondary' }} />
+                                    : <Chip label={t('current')} size="small" sx={{ height: 20, bgcolor: 'rgba(var(--mui-palette-success-mainChannel) / 0.12)', color: 'success.main' }} />}
                                   <Chip label={(doc.lang || 'en').toUpperCase()} size="small" variant="outlined" sx={{ height: 20, color: 'text.secondary' }} />
                                 </Box>
                                 <Typography variant="caption" color="text.secondary">
-                                  Generated: {new Date(doc.generated_at).toLocaleString()}
+                                  {t('generatedLabel')}: {new Date(doc.generated_at).toLocaleString()}
                                 </Typography>
                               </Box>
 
-                              <Tooltip title="This SHA-256 hash forms a digital fingerprint that proves file integrity in court.">
+                              <Tooltip title={t('sha256Tooltip')}>
                                 <Chip
-                                  icon={<Fingerprint size={14} style={{ color: '#06b6d4' }} />}
+                                  icon={<Fingerprint size={14} aria-hidden="true" style={{ color: 'var(--mui-palette-primary-main)' }} />}
                                   label={`${doc.sha256.substring(0, 16)}...`}
                                   size="small"
-                                  sx={{ bgcolor: 'rgba(6, 182, 212, 0.12)', color: '#06b6d4', fontWeight: 600 }}
+                                  sx={{ bgcolor: 'rgba(var(--mui-palette-primary-mainChannel) / 0.12)', color: 'primary.main', fontWeight: 700, fontFamily: MONO_FONT }}
                                 />
                               </Tooltip>
                             </Box>
@@ -1095,7 +1163,7 @@ export default function CaseWorkspace() {
                                 onClick={() => openViewer(doc.id, 'file', doc.type.replace(/_/g, ' '))}
                                 startIcon={<Eye size={14} />}
                               >
-                                View
+                                {t('view')}
                               </Button>
 
                               <Button
@@ -1106,7 +1174,7 @@ export default function CaseWorkspace() {
                                 onClick={() => openViewer(doc.id, 'certificate', `${doc.type.replace(/_/g, ' ')} — s.63 Certificate`)}
                                 startIcon={<Eye size={14} />}
                               >
-                                View Certificate
+                                {t('viewCertificate')}
                               </Button>
 
                               <Button
@@ -1138,7 +1206,7 @@ export default function CaseWorkspace() {
 
                             <Divider sx={{ my: 1.5 }} />
                             <Typography variant="caption" color="warning.main" sx={{ fontWeight: 600 }}>
-                              Disclaimer: {doc.disclaimer}
+                              {t('disclaimerLabel')}: {doc.disclaimer}
                             </Typography>
                           </Paper>
                         ))}
@@ -1152,7 +1220,7 @@ export default function CaseWorkspace() {
 
           {/* TAB 4: CASE DIARY TIMELINE */}
           {tabValue === 3 && (
-            <Card sx={{ background: '#111827' }}>
+            <Card role="tabpanel" id="tabpanel-3" aria-labelledby="tab-timeline">
               <CardContent sx={{ p: 4 }}>
                 <Typography variant="h6" sx={{ fontWeight: 700, mb: 3 }}>
                   {t('diary')}
@@ -1165,7 +1233,8 @@ export default function CaseWorkspace() {
                       fullWidth
                       size="small"
                       multiline
-                      placeholder="Log an investigative step (e.g. 'Recorded witness statement of Ramesh; arrest of accused at 14:30')"
+                      placeholder={t('diaryPlaceholder')}
+                      slotProps={{ htmlInput: { 'aria-label': 'New case diary entry' } }}
                       value={diaryNote}
                       onChange={(e) => setDiaryNote(e.target.value)}
                     />
@@ -1176,47 +1245,53 @@ export default function CaseWorkspace() {
                       disabled={addingDiary || !diaryNote.trim()}
                       sx={{ whiteSpace: 'nowrap', height: 40 }}
                     >
-                      Add Entry
+                      {t('addEntry')}
                     </Button>
                   </Box>
                 )}
 
-                <Box sx={{ position: 'relative', pl: 4, '&::before': { content: '""', position: 'absolute', left: 16, top: 4, bottom: 4, width: 2, bgcolor: 'rgba(255,255,255,0.08)' } }}>
+                {diary.length === 0 && (
+                  <Typography color="text.secondary" sx={{ fontStyle: 'italic' }}>{t('noDiary')}</Typography>
+                )}
+
+                <Box sx={{ position: 'relative', pl: 4, '&::before': { content: '""', position: 'absolute', left: 16, top: 4, bottom: 4, width: 2, bgcolor: 'divider' } }}>
                   {diary.map((evt, idx) => {
+                    // The icon carries the event meaning; colour only reinforces it,
+                    // so overlapping tones across types are fine.
                     let Icon = Briefcase;
-                    let color = '#3b82f6';
+                    let color = 'var(--mui-palette-text-secondary)';
                     if (evt.event_type === 'fir_filed') {
                       Icon = Plus;
-                      color = '#10b981';
+                      color = 'var(--mui-palette-success-main)';
                     } else if (evt.event_type === 'analyzed') {
                       Icon = Scale;
-                      color = '#06b6d4';
+                      color = 'var(--mui-palette-primary-main)';
                     } else if (evt.event_type === 'facts_edited') {
                       Icon = BookOpen;
-                      color = '#f59e0b';
+                      color = 'var(--mui-palette-warning-main)';
                     } else if (evt.event_type === 'document_generated') {
                       Icon = FileCheck;
-                      color = '#8b5cf6';
+                      color = 'var(--mui-palette-secondary-main)';
                     } else if (evt.event_type === 'evidence_uploaded') {
                       Icon = ImageIcon;
-                      color = '#06b6d4';
+                      color = 'var(--mui-palette-info-main)';
                     } else if (evt.source === 'officer') {
                       Icon = BookOpen;
-                      color = '#ec4899';
+                      color = 'var(--mui-palette-secondary-main)';
                     }
 
                     return (
                       <Box key={idx} sx={{ position: 'relative', mb: 4, '&:last-child': { mb: 0 } }}>
                         {/* Timeline Icon */}
-                        <Box sx={{ position: 'absolute', left: -36, top: 2, width: 24, height: 24, borderRadius: '50%', bgcolor: color, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 10px ' + color }}>
-                          <Icon size={12} style={{ color: '#000' }} />
+                        <Box aria-hidden="true" sx={{ position: 'absolute', left: -36, top: 2, width: 24, height: 24, borderRadius: '50%', bgcolor: color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <Icon size={12} style={{ color: 'var(--mui-palette-background-paper)' }} />
                         </Box>
 
                         {/* Event Content */}
                         <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'text.primary' }}>
                           {evt.description}
                           {evt.source === 'officer' && (
-                            <Chip label="manual" size="small" sx={{ ml: 1, height: 18, fontSize: '0.6rem', bgcolor: 'rgba(236,72,153,0.15)', color: '#ec4899' }} />
+                            <Chip label={t('manual')} size="small" variant="outlined" sx={{ ml: 1, height: 18, fontSize: '0.6rem', color: 'text.secondary' }} />
                           )}
                         </Typography>
                         <Typography variant="caption" color="text.secondary">
@@ -1233,22 +1308,22 @@ export default function CaseWorkspace() {
 
           {/* TAB 5: EVIDENCE & FACE MATCH */}
           {tabValue === 4 && (
-            <Grid container spacing={4}>
+            <Grid container spacing={4} role="tabpanel" id="tabpanel-4" aria-labelledby="tab-evidence">
               {/* Upload + list */}
               <Grid size={{ xs: 12, md: 7 }}>
-                <Card sx={{ background: '#111827' }}>
+                <Card>
                   <CardContent sx={{ p: 3 }}>
                     <Typography variant="h6" sx={{ fontWeight: 700, mb: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <ImageIcon size={20} style={{ color: '#06b6d4' }} /> Evidence Locker
+                      <ImageIcon size={20} aria-hidden="true" style={{ color: 'var(--mui-palette-primary-main)' }} /> {t('evidenceLocker')}
                     </Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                      Upload evidence images/files. Each is SHA-256 hashed for chain of custody, tagged, and scanned for faces.
+                      {t('evidenceLockerHint')}
                     </Typography>
 
                     {canWrite && (
                       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 3 }}>
-                        <TextField size="small" label="Label (e.g. CCTV still, accused photo)" value={evLabel} onChange={(e) => setEvLabel(e.target.value)} />
-                        <TextField size="small" label="Tags (comma-separated)" value={evTags} onChange={(e) => setEvTags(e.target.value)} />
+                        <TextField size="small" label={t('evidenceLabelField')} value={evLabel} onChange={(e) => setEvLabel(e.target.value)} />
+                        <TextField size="small" label={t('evidenceTagsField')} value={evTags} onChange={(e) => setEvTags(e.target.value)} />
                         <input type="file" ref={evFileRef} style={{ display: 'none' }} accept="image/*,application/pdf" onChange={handleUploadEvidence} />
                         <Button
                           variant="contained"
@@ -1256,32 +1331,32 @@ export default function CaseWorkspace() {
                           onClick={() => evFileRef.current?.click()}
                           disabled={evUploading}
                         >
-                          {evUploading ? 'Uploading...' : 'Upload Evidence'}
+                          {evUploading ? t('uploading') : t('uploadEvidence')}
                         </Button>
                       </Box>
                     )}
 
                     {evidence.length === 0 ? (
-                      <Typography color="text.secondary" sx={{ fontStyle: 'italic' }}>No evidence uploaded yet.</Typography>
+                      <Typography color="text.secondary" sx={{ fontStyle: 'italic' }}>{t('noEvidence')}</Typography>
                     ) : (
                       <Grid container spacing={2}>
                         {evidence.map((ev) => (
                           <Grid size={{ xs: 6, sm: 4 }} key={ev.id}>
-                            <Paper sx={{ p: 1, background: '#0f172a', border: '1px solid rgba(255,255,255,0.05)' }}>
+                            <Paper variant="outlined" sx={{ p: 1, bgcolor: 'background.default' }}>
                               {ev.kind === 'image' ? (
                                 <Box component="img" src={api.getEvidenceUrl(ev.id)} alt={ev.label || 'evidence'}
                                   sx={{ width: '100%', height: 110, objectFit: 'cover', borderRadius: 1, mb: 1 }} />
                               ) : (
-                                <Box sx={{ height: 110, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(255,255,255,0.03)', borderRadius: 1, mb: 1 }}>
-                                  <FileDown size={32} style={{ color: '#64748b' }} />
+                                <Box sx={{ height: 110, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'action.hover', borderRadius: 1, mb: 1 }}>
+                                  <FileDown size={32} aria-hidden="true" style={{ color: 'var(--mui-palette-text-secondary)' }} />
                                 </Box>
                               )}
                               <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {ev.label || 'Untitled'}
+                                {ev.label || t('untitled')}
                               </Typography>
                               <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mt: 0.5 }}>
                                 {ev.face_count != null && ev.face_count > 0 && (
-                                  <Chip icon={<ScanFace size={11} />} label={`${ev.face_count} face`} size="small" sx={{ height: 20, bgcolor: 'rgba(6,182,212,0.12)', color: '#06b6d4' }} />
+                                  <Chip icon={<ScanFace size={11} />} label={`${ev.face_count} ${t('faces')}`} size="small" sx={{ height: 20, bgcolor: 'rgba(var(--mui-palette-primary-mainChannel) / 0.12)', color: 'primary.main' }} />
                                 )}
                                 {ev.tags.map((tg, i) => (
                                   <Chip key={i} label={tg} size="small" variant="outlined" sx={{ height: 20, fontSize: '0.65rem', color: 'text.secondary' }} />
@@ -1303,16 +1378,16 @@ export default function CaseWorkspace() {
 
               {/* Face match */}
               <Grid size={{ xs: 12, md: 5 }}>
-                <Card sx={{ background: '#111827' }}>
+                <Card>
                   <CardContent sx={{ p: 3 }}>
                     <Typography variant="h6" sx={{ fontWeight: 700, mb: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <ScanFace size={20} style={{ color: '#8b5cf6' }} /> Face Match
+                      <ScanFace size={20} aria-hidden="true" style={{ color: 'var(--mui-palette-secondary-main)' }} /> {t('faceMatch')}
                     </Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                      Upload a probe face photo to match against the case's evidence images.
+                      {t('faceMatchHint')}
                     </Typography>
                     <Alert severity="warning" sx={{ mb: 2, py: 0.5 }}>
-                      Demonstrative matcher — not a forensic identification.
+                      {t('faceMatchWarning')}
                     </Alert>
                     <input type="file" ref={probeFileRef} style={{ display: 'none' }} accept="image/*" onChange={handleFaceMatch} />
                     <Button
@@ -1323,27 +1398,27 @@ export default function CaseWorkspace() {
                       onClick={() => probeFileRef.current?.click()}
                       disabled={faceMatching || evidence.length === 0}
                     >
-                      {faceMatching ? 'Matching...' : 'Upload Probe & Match'}
+                      {faceMatching ? t('matching') : t('uploadProbeMatch')}
                     </Button>
 
                     {faceResult && (
                       <Box sx={{ mt: 3 }}>
                         <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                          Probe faces detected: <strong>{faceResult.probe_faces}</strong>
+                          {t('probeFacesDetected')}: <strong>{faceResult.probe_faces}</strong>
                         </Typography>
                         {faceResult.matches.length === 0 ? (
-                          <Typography variant="body2" color="text.secondary">No comparable evidence faces.</Typography>
+                          <Typography variant="body2" color="text.secondary">{t('noComparableFaces')}</Typography>
                         ) : (
                           faceResult.matches.map((m) => (
                             <Box key={m.evidence_id} sx={{ mb: 1.5 }}>
                               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                                <Typography variant="body2">{m.label || 'Untitled'}</Typography>
-                                <Typography variant="body2" sx={{ fontWeight: 700, color: m.score > 0.6 ? '#10b981' : '#f59e0b' }}>
+                                <Typography variant="body2">{m.label || t('untitled')}</Typography>
+                                <Typography variant="body2" sx={{ fontWeight: 700, color: m.score > 0.6 ? 'success.main' : 'warning.main' }}>
                                   {Math.round(m.score * 100)}%
                                 </Typography>
                               </Box>
                               <LinearProgress variant="determinate" value={m.score * 100}
-                                sx={{ height: 6, borderRadius: 3, bgcolor: 'rgba(255,255,255,0.05)', '& .MuiLinearProgress-bar': { bgcolor: m.score > 0.6 ? '#10b981' : '#f59e0b' } }} />
+                                sx={{ height: 6, borderRadius: 3, '& .MuiLinearProgress-bar': { bgcolor: m.score > 0.6 ? 'success.main' : 'warning.main' } }} />
                             </Box>
                           ))
                         )}
@@ -1357,24 +1432,25 @@ export default function CaseWorkspace() {
 
           {/* TAB 6: MOCK INTEGRATIONS & TOOLS */}
           {tabValue === 5 && (
-            <Grid container spacing={4}>
+            <Grid container spacing={4} role="tabpanel" id="tabpanel-5" aria-labelledby="tab-mocks">
               {/* BharatPol Search */}
               <Grid size={{ xs: 12, md: 7 }}>
-                <Card sx={{ background: '#111827' }}>
+                <Card>
                   <CardContent sx={{ p: 3 }}>
                     <Typography variant="h6" sx={{ fontWeight: 700, mb: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Globe size={20} style={{ color: '#3b82f6' }} />
+                      <Globe size={20} aria-hidden="true" style={{ color: 'var(--mui-palette-info-main)' }} />
                       {t('bharatpol')}
                     </Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                      Simulate international criminal checkups using the mock BharatPolInterpol databases.
+                      {t('bharatpolHint')}
                     </Typography>
 
                     <Box component="form" onSubmit={handleBharatPolLookup} sx={{ display: 'flex', gap: 1.5, mb: 3 }}>
                       <TextField
                         fullWidth
                         id="bp-search-input"
-                        placeholder="Search name (e.g. Suresh Kumar)..."
+                        placeholder={t('bharatpolPlaceholder')}
+                        slotProps={{ htmlInput: { 'aria-label': 'BharatPol name search' } }}
                         value={bpQuery}
                         onChange={(e) => setBpQuery(e.target.value)}
                       />
@@ -1385,33 +1461,33 @@ export default function CaseWorkspace() {
                         disabled={bpLoading || !bpQuery}
                         sx={{ px: 3 }}
                       >
-                        {bpLoading ? <CircularProgress size={16} /> : 'Lookup'}
+                        {bpLoading ? <CircularProgress size={16} /> : t('lookup')}
                       </Button>
                     </Box>
 
                     {bpResult && (
-                      <Paper sx={{ p: 3, background: '#0f172a', border: '1px solid rgba(255,255,255,0.05)' }}>
+                      <Paper variant="outlined" sx={{ p: 3, bgcolor: 'background.default' }}>
                         <Typography variant="subtitle2" color="secondary.light" sx={{ fontWeight: 700, mb: 2 }}>
-                          Database Source: {bpResult.source}
+                          {t('dbSource')}: {bpResult.source}
                         </Typography>
 
                         {bpResult.matches.length === 0 ? (
                           <Typography variant="body2" sx={{ fontStyle: 'italic' }}>
-                            No Interpol notices found for query "{bpResult.query}".
+                            {t('noInterpolMatches', { query: bpResult.query })}
                           </Typography>
                         ) : (
                           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                             {bpResult.matches.map((match: any, idx: number) => (
-                              <Box key={idx} sx={{ p: 2, bgcolor: 'rgba(239, 68, 68, 0.05)', borderLeft: '3px solid #ef4444', borderRadius: 1 }}>
+                              <Box key={idx} sx={{ p: 2, bgcolor: 'rgba(var(--mui-palette-error-mainChannel) / 0.08)', borderLeft: '3px solid', borderLeftColor: 'error.main', borderRadius: 1 }}>
                                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                                   <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'error.main' }}>
                                     {match.notice}
                                   </Typography>
                                   <Chip label={match.interpol_ref} size="small" color="error" variant="outlined" />
                                 </Box>
-                                <Typography variant="body2" sx={{ fontWeight: 600 }}>Name: {match.name}</Typography>
-                                <Typography variant="body2" color="text.secondary">Country of Origin: {match.country}</Typography>
-                                <Typography variant="body2" color="text.secondary">Wanted for: {match.wanted_for}</Typography>
+                                <Typography variant="body2" sx={{ fontWeight: 600 }}>{t('nameLabel')}: {match.name}</Typography>
+                                <Typography variant="body2" color="text.secondary">{t('countryOfOrigin')}: {match.country}</Typography>
+                                <Typography variant="body2" color="text.secondary">{t('wantedFor')}: {match.wanted_for}</Typography>
                               </Box>
                             ))}
                           </Box>
@@ -1424,14 +1500,14 @@ export default function CaseWorkspace() {
 
               {/* Translation Utility */}
               <Grid size={{ xs: 12, md: 5 }}>
-                <Card sx={{ background: '#111827' }}>
+                <Card>
                   <CardContent sx={{ p: 3 }}>
                     <Typography variant="h6" sx={{ fontWeight: 700, mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Languages size={20} style={{ color: '#06b6d4' }} />
-                      Quick Translation Tool
+                      <Languages size={20} aria-hidden="true" style={{ color: 'var(--mui-palette-primary-main)' }} />
+                      {t('quickTranslate')}
                     </Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                      Translate legal case details manually into English, Hindi, or Gujarati.
+                      {t('quickTranslateHint')}
                     </Typography>
 
                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -1440,7 +1516,8 @@ export default function CaseWorkspace() {
                         multiline
                         rows={3}
                         id="trans-input"
-                        placeholder="Type text to translate..."
+                        placeholder={t('quickTranslatePlaceholder')}
+                        slotProps={{ htmlInput: { 'aria-label': 'Text to translate' } }}
                         value={transInput}
                         onChange={(e) => setTransInput(e.target.value)}
                       />
@@ -1453,7 +1530,7 @@ export default function CaseWorkspace() {
                           startIcon={transLoading ? <CircularProgress size={12} /> : <Languages size={12} />}
                           onClick={() => handleQuickTranslate('hi')}
                         >
-                          To Hindi
+                          {t('toHindi')}
                         </Button>
                         <Button
                           variant="outlined"
@@ -1463,11 +1540,11 @@ export default function CaseWorkspace() {
                           startIcon={transLoading ? <CircularProgress size={12} /> : <Languages size={12} />}
                           onClick={() => handleQuickTranslate('gu')}
                         >
-                          To Gujarati
+                          {t('toGujarati')}
                         </Button>
                       </Box>
                       {transOutput && (
-                        <Box sx={{ bgcolor: 'rgba(6, 182, 212, 0.05)', p: 1.5, borderRadius: 1.5, borderLeft: '3px solid #06b6d4' }}>
+                        <Box sx={{ bgcolor: 'rgba(var(--mui-palette-primary-mainChannel) / 0.08)', p: 1.5, borderRadius: 1, borderLeft: '3px solid', borderLeftColor: 'primary.main' }}>
                           <Typography variant="body2">{transOutput}</Typography>
                         </Box>
                       )}
@@ -1477,22 +1554,89 @@ export default function CaseWorkspace() {
               </Grid>
             </Grid>
           )}
+
+          {/* TAB 7: AUDIT TRAIL — the append-only chain of custody. Read-only:
+              audit_log is guarded by DB triggers that reject UPDATE and DELETE. */}
+          {tabValue === 6 && (
+            <Card role="tabpanel" id="tabpanel-6" aria-labelledby="tab-audit">
+              <CardContent sx={{ p: 4 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1 }}>
+                  <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                    {t('tabAudit')}
+                  </Typography>
+                  <Chip
+                    label={t('appendOnly')}
+                    size="small"
+                    icon={<Lock size={12} />}
+                    sx={{ height: 22, fontSize: '0.7rem', bgcolor: 'rgba(var(--mui-palette-success-mainChannel) / 0.12)', color: 'success.main' }}
+                  />
+                </Box>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                  {t('auditHint')}
+                </Typography>
+
+                {auditLog.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary">
+                    {t('noAudit')}
+                  </Typography>
+                ) : (
+                  <TableContainer component={Paper} sx={{ background: 'transparent', boxShadow: 'none' }}>
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>{t('colWhen')}</TableCell>
+                          <TableCell>{t('colAction')}</TableCell>
+                          <TableCell>{t('colActor')}</TableCell>
+                          <TableCell>{t('colChange')}</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {auditLog.map((entry) => (
+                          <TableRow key={entry.id} hover>
+                            <TableCell sx={{ whiteSpace: 'nowrap', color: 'text.secondary' }}>
+                              {new Date(entry.occurred_at).toLocaleString()}
+                            </TableCell>
+                            <TableCell>
+                              <Chip
+                                label={entry.action}
+                                size="small"
+                                sx={{ height: 20, fontSize: '0.68rem', fontFamily: MONO_FONT, bgcolor: 'rgba(var(--mui-palette-primary-mainChannel) / 0.12)', color: 'primary.main' }}
+                              />
+                            </TableCell>
+                            <TableCell>{entry.actor}</TableCell>
+                            <TableCell sx={{ maxWidth: 380 }}>
+                              <Typography
+                                variant="caption"
+                                sx={{ fontFamily: 'monospace', color: 'text.secondary', wordBreak: 'break-word' }}
+                              >
+                                {entry.after ? JSON.stringify(entry.after).slice(0, 160) : '—'}
+                              </Typography>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </Box>
       )}
 
       {/* In-browser document viewer */}
-      <Dialog open={viewerOpen} onClose={() => setViewerOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', textTransform: 'capitalize', pr: 1 }}>
-          {viewerTitle || 'Document'}
-          <IconButton onClick={() => setViewerOpen(false)} size="small" sx={{ color: 'text.secondary' }}>
+      <Dialog open={viewerOpen} onClose={() => setViewerOpen(false)} maxWidth="md" fullWidth aria-labelledby="doc-viewer-title">
+        <DialogTitle id="doc-viewer-title" sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', textTransform: 'capitalize', pr: 1 }}>
+          {viewerTitle || t('documentTitle')}
+          <IconButton onClick={() => setViewerOpen(false)} aria-label={t('closePreview')} sx={{ color: 'text.secondary' }}>
             <X size={18} />
           </IconButton>
         </DialogTitle>
-        <DialogContent dividers sx={{ bgcolor: '#e5e7eb', minHeight: 400 }}>
+        <DialogContent dividers sx={(theme) => ({ bgcolor: '#E2E8F0', minHeight: 400, ...theme.applyStyles('dark', { backgroundColor: '#1E293B' }) })}>
           {viewerLoading && (
             <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 8, gap: 2 }}>
               <CircularProgress size={28} />
-              <Typography sx={{ color: '#374151' }}>Loading document preview…</Typography>
+              <Typography sx={(theme) => ({ color: '#334155', ...theme.applyStyles('dark', { color: '#CBD5E1' }) })}>{t('loadingPreview')}</Typography>
             </Box>
           )}
           {/* docx-preview renders the .docx into this container (white "paper" on grey) */}

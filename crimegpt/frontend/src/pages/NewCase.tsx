@@ -41,7 +41,7 @@ export default function NewCase() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!firNarrative || firNarrative.trim().length < 10) {
-      setError('FIR narrative must be at least 10 characters long.');
+      setError(t('firTooShort'));
       return;
     }
 
@@ -49,13 +49,13 @@ export default function NewCase() {
       setLoading(true);
       setError(null);
       const newCase = await api.createCase(firNarrative.trim(), caseNumber.trim());
-      setSuccessMsg('Case created successfully! Redirecting to workspace...');
+      setSuccessMsg(t('caseCreated'));
       setTimeout(() => {
         navigate(`/case/${newCase.id}`);
       }, 1200);
     } catch (err: any) {
       console.error(err);
-      setError(err.response?.data?.detail || 'Failed to create case. Please try again.');
+      setError(err.response?.data?.detail || t('createCaseFailed'));
     } finally {
       setLoading(false);
     }
@@ -108,7 +108,7 @@ export default function NewCase() {
     <Box sx={{ py: 4, px: { xs: 2, md: 4 } }}>
       {/* Back to Dashboard */}
       <Button
-        startIcon={<ArrowLeft size={16} />}
+        startIcon={<ArrowLeft size={16} aria-hidden="true" />}
         onClick={() => navigate('/')}
         sx={{ mb: 3, color: 'text.secondary' }}
       >
@@ -118,10 +118,10 @@ export default function NewCase() {
       <Grid container spacing={4}>
         {/* Left Column: Form */}
         <Grid size={{ xs: 12, md: 8 }}>
-          <Card sx={{ background: '#111827', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+          <Card>
             <CardContent sx={{ p: 4 }}>
-              <Typography variant="h5" sx={{ fontWeight: 800, mb: 3, display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                <Sparkles size={24} style={{ color: '#06b6d4' }} />
+              <Typography variant="h5" component="h1" sx={{ fontWeight: 800, mb: 3, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <Sparkles size={24} aria-hidden="true" style={{ color: 'var(--mui-palette-primary-main)' }} />
                 {t('newCase')}
               </Typography>
 
@@ -140,7 +140,7 @@ export default function NewCase() {
               <Box component="form" onSubmit={handleSubmit}>
                 <Grid container spacing={3}>
                   <Grid size={12}>
-                    <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
+                    <Typography component="label" htmlFor="case-number-input" variant="subtitle2" sx={{ mb: 1, fontWeight: 700, display: 'block' }}>
                       {t('caseNumber')}
                     </Typography>
                     <TextField
@@ -154,7 +154,7 @@ export default function NewCase() {
                   </Grid>
 
                   <Grid size={12}>
-                    <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
+                    <Typography component="label" htmlFor="fir-narrative-input" variant="subtitle2" sx={{ mb: 1, fontWeight: 700, display: 'block' }}>
                       {t('firNarrative')} *
                     </Typography>
                     <TextField
@@ -166,7 +166,7 @@ export default function NewCase() {
                       value={firNarrative}
                       onChange={(e) => setFirNarrative(e.target.value)}
                       disabled={loading}
-                      helperText="Note: Narrative supports multilingual input (English, Hindi, and Gujarati)."
+                      helperText={t('firNarrativeHelper')}
                     />
                   </Grid>
 
@@ -193,13 +193,13 @@ export default function NewCase() {
           <Grid container spacing={3}>
             {/* Quick Intake Helpers */}
             <Grid size={12}>
-              <Card sx={{ background: 'linear-gradient(135deg, #111827 0%, #0f172a 100%)', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+              <Card>
                 <CardContent sx={{ p: 3 }}>
-                  <Typography variant="h6" sx={{ fontWeight: 700, mb: 2, color: 'primary.light' }}>
-                    Quick Intake Helpers
+                  <Typography variant="h6" sx={{ fontWeight: 700, mb: 2, color: 'primary.main' }}>
+                    {t('quickIntake')}
                   </Typography>
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                    Accelerate police registration using connected databases or digital evidence files.
+                    {t('quickIntakeHint')}
                   </Typography>
 
                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -207,13 +207,13 @@ export default function NewCase() {
                       id="btn-import-cctns"
                       variant="outlined"
                       color="secondary"
-                      startIcon={importingCctns ? <CircularProgress size={16} /> : <Database size={16} />}
+                      startIcon={importingCctns ? <CircularProgress size={16} /> : <Database size={16} aria-hidden="true" />}
                       onClick={handleCctnsImport}
                       disabled={loading || importingCctns || uploadingOcr}
                       fullWidth
                       sx={{ height: 44, justifyContent: 'flex-start', px: 2 }}
                     >
-                      {importingCctns ? 'Importing...' : t('importCCTNS')}
+                      {importingCctns ? t('importing') : t('importCCTNS')}
                     </Button>
 
                     <input
@@ -228,13 +228,13 @@ export default function NewCase() {
                       id="btn-ocr-fir"
                       variant="outlined"
                       color="primary"
-                      startIcon={uploadingOcr ? <CircularProgress size={16} /> : <Upload size={16} />}
+                      startIcon={uploadingOcr ? <CircularProgress size={16} /> : <Upload size={16} aria-hidden="true" />}
                       onClick={handleOcrClick}
                       disabled={loading || importingCctns || uploadingOcr}
                       fullWidth
                       sx={{ height: 44, justifyContent: 'flex-start', px: 2 }}
                     >
-                      {uploadingOcr ? 'Parsing FIR...' : t('uploadScannedFIR')}
+                      {uploadingOcr ? t('parsingFIR') : t('uploadScannedFIR')}
                     </Button>
                   </Box>
                 </CardContent>
@@ -243,20 +243,22 @@ export default function NewCase() {
 
             {/* Information panel */}
             <Grid size={12}>
-              <Paper sx={{ p: 3, background: '#111827', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+              <Paper variant="outlined" sx={{ p: 3 }}>
                 <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <FileText size={18} style={{ color: '#06b6d4' }} />
-                  Officer Workflow Instructions
+                  <FileText size={18} aria-hidden="true" style={{ color: 'var(--mui-palette-primary-main)' }} />
+                  {t('workflowTitle')}
                 </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-                  1. Paste the written FIR narrative or scan the physical page copy using the OCR tool.
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-                  2. Double check case registration numbers to ensure alignment with CCTNS system records.
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  3. The pipeline will automatically map and translate terms, classify the applicable BNS code, and draft necessary documents.
-                </Typography>
+                <Box component="ol" sx={{ m: 0, pl: 2.5, color: 'text.secondary', '& li': { mb: 1.5 }, '& li:last-of-type': { mb: 0 } }}>
+                  <Typography component="li" variant="body2">
+                    {t('workflowStep1')}
+                  </Typography>
+                  <Typography component="li" variant="body2">
+                    {t('workflowStep2')}
+                  </Typography>
+                  <Typography component="li" variant="body2">
+                    {t('workflowStep3')}
+                  </Typography>
+                </Box>
               </Paper>
             </Grid>
           </Grid>

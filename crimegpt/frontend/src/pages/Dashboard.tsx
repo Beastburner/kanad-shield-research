@@ -1,37 +1,96 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { 
-  Box, 
-  Button, 
-  Card, 
-  CardContent, 
-  Grid, 
-  IconButton, 
-  InputBase, 
-  Paper, 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableContainer, 
-  TableHead, 
-  TableRow, 
-  Typography, 
+import {
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Grid,
+  IconButton,
+  InputBase,
+  Paper,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Typography,
   Chip,
   Tooltip,
   CircularProgress
 } from '@mui/material';
-import { 
-  Plus, 
-  Search, 
-  FileText, 
-  AlertTriangle, 
-  CheckCircle, 
+import {
+  Plus,
+  Search,
+  FileText,
+  AlertTriangle,
+  CheckCircle,
   Activity,
   ArrowRight,
   RefreshCw
 } from 'lucide-react';
 import { api, type Case } from '../api';
+import { MONO_FONT } from '../theme';
+
+// Status is carried by a label plus a semantic colour — never colour alone.
+const STATUS_META: Record<string, { labelKey: string; tone: 'info' | 'success' | 'warning' }> = {
+  new: { labelKey: 'statusNew', tone: 'info' },
+  analyzed: { labelKey: 'statusAnalyzed', tone: 'info' },
+  review_required: { labelKey: 'statusReviewRequired', tone: 'warning' },
+  documented: { labelKey: 'statusDocumented', tone: 'success' },
+};
+
+function StatusChip({ status }: { status: Case['status'] }) {
+  const { t } = useTranslation();
+  const meta = STATUS_META[status];
+  if (!meta) return <Chip label={status} size="small" />;
+  return (
+    <Chip
+      label={t(meta.labelKey)}
+      size="small"
+      icon={meta.tone === 'warning' ? <AlertTriangle size={13} aria-hidden="true" /> : undefined}
+      sx={{
+        bgcolor: `rgba(var(--mui-palette-${meta.tone}-mainChannel) / 0.12)`,
+        color: `${meta.tone}.main`,
+        border: '1px solid',
+        borderColor: `rgba(var(--mui-palette-${meta.tone}-mainChannel) / 0.4)`,
+        '& .MuiChip-icon': { color: 'inherit' },
+      }}
+    />
+  );
+}
+
+function StatCard({ icon, label, value, tone }: {
+  icon: React.ReactNode;
+  label: string;
+  value: number;
+  tone: 'primary' | 'warning' | 'success' | 'info';
+}) {
+  return (
+    <Card sx={{ height: '100%' }}>
+      <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 2, '&:last-child': { pb: 2 } }}>
+        <Box
+          aria-hidden="true"
+          sx={{
+            p: 1.25,
+            borderRadius: 1,
+            display: 'flex',
+            bgcolor: `rgba(var(--mui-palette-${tone}-mainChannel) / 0.12)`,
+            color: `${tone}.main`,
+          }}
+        >
+          {icon}
+        </Box>
+        <Box>
+          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 700 }}>{label}</Typography>
+          <Typography variant="h5" sx={{ fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>{value}</Typography>
+        </Box>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function Dashboard() {
   const { t } = useTranslation();
@@ -40,14 +99,19 @@ export default function Dashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const fetchCases = async (query?: string) => {
     try {
       setLoading(true);
+      setLoadError(null);
       const data = await api.listCases(query);
       setCases(data);
     } catch (error) {
       console.error('Error fetching cases:', error);
+      // Without this the empty list below reads as "no cases exist", which is a
+      // very different claim from "the case service could not be reached".
+      setLoadError(t('loadCasesError'));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -71,21 +135,6 @@ export default function Dashboard() {
     }
   };
 
-  const getStatusChip = (status: Case['status']) => {
-    switch (status) {
-      case 'new':
-        return <Chip label="New Intake" size="small" sx={{ bgcolor: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.3)' }} />;
-      case 'analyzed':
-        return <Chip label="Analyzed" size="small" sx={{ bgcolor: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.3)' }} />;
-      case 'review_required':
-        return <Chip label="Review Required" size="small" icon={<AlertTriangle size={14} style={{ color: '#fbbf24' }} />} sx={{ bgcolor: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24', border: '1px solid rgba(245, 158, 11, 0.3)' }} />;
-      case 'documented':
-        return <Chip label="Documented" size="small" icon={<CheckCircle size={14} style={{ color: '#34d399' }} />} sx={{ bgcolor: 'rgba(16, 185, 129, 0.25)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.5)' }} />;
-      default:
-        return <Chip label={status} size="small" />;
-    }
-  };
-
   // Calculations for stats
   const totalCases = cases.length;
   const reviewRequiredCases = cases.filter(c => c.status === 'review_required').length;
@@ -95,32 +144,32 @@ export default function Dashboard() {
   return (
     <Box sx={{ py: 4, px: { xs: 2, md: 4 } }}>
       {/* Header Section */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4, flexWrap: 'wrap', gap: 2 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', mb: 4, flexWrap: 'wrap', gap: 2 }}>
         <Box>
-          <Typography variant="h4" sx={{ fontWeight: 800, mb: 1, background: 'linear-gradient(90deg, #fff 0%, #9ca3af 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+          <Typography variant="h4" component="h1" sx={{ mb: 0.5 }}>
             {t('recentCases')}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Manage, analyze, and generate court documents for police cases
+            {t('dashboardSubtitle')}
           </Typography>
         </Box>
-        <Box sx={{ display: 'flex', gap: 2 }}>
+        <Box sx={{ display: 'flex', gap: 1.5 }}>
           <Button
             variant="outlined"
             onClick={() => { setRefreshing(true); fetchCases(searchQuery); }}
             disabled={loading}
-            startIcon={refreshing ? <CircularProgress size={16} color="inherit" /> : <RefreshCw size={16} />}
-            sx={{ height: 48 }}
+            startIcon={refreshing
+              ? <CircularProgress size={16} color="inherit" />
+              : <RefreshCw size={16} aria-hidden="true" />}
           >
-            Refresh
+            {t('refresh')}
           </Button>
           <Button
             id="btn-new-case"
             variant="contained"
             color="primary"
-            startIcon={<Plus size={18} />}
+            startIcon={<Plus size={18} aria-hidden="true" />}
             onClick={() => navigate('/new')}
-            sx={{ height: 48, fontWeight: 700 }}
           >
             {t('newCase')}
           </Button>
@@ -128,81 +177,37 @@ export default function Dashboard() {
       </Box>
 
       {/* Stats Section */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Card sx={{ background: 'linear-gradient(135deg, rgba(17, 24, 39, 0.7) 0%, rgba(31, 41, 55, 0.7) 100%)', backdropFilter: 'blur(10px)' }}>
-            <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'rgba(6, 182, 212, 0.1)', color: '#06b6d4' }}>
-                <Activity size={24} />
-              </Box>
-              <Box>
-                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>Total Cases</Typography>
-                <Typography variant="h5" sx={{ fontWeight: 700 }}>{totalCases}</Typography>
-              </Box>
-            </CardContent>
-          </Card>
+      <Grid container spacing={2} sx={{ mb: 3 }}>
+        <Grid size={{ xs: 6, md: 3 }}>
+          <StatCard icon={<Activity size={22} />} label={t('statTotal')} value={totalCases} tone="primary" />
         </Grid>
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Card sx={{ background: 'linear-gradient(135deg, rgba(17, 24, 39, 0.7) 0%, rgba(31, 41, 55, 0.7) 100%)', backdropFilter: 'blur(10px)' }}>
-            <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}>
-                <AlertTriangle size={24} />
-              </Box>
-              <Box>
-                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>Pending Review</Typography>
-                <Typography variant="h5" sx={{ fontWeight: 700 }}>{reviewRequiredCases}</Typography>
-              </Box>
-            </CardContent>
-          </Card>
+        <Grid size={{ xs: 6, md: 3 }}>
+          <StatCard icon={<AlertTriangle size={22} />} label={t('statPendingReview')} value={reviewRequiredCases} tone="warning" />
         </Grid>
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Card sx={{ background: 'linear-gradient(135deg, rgba(17, 24, 39, 0.7) 0%, rgba(31, 41, 55, 0.7) 100%)', backdropFilter: 'blur(10px)' }}>
-            <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}>
-                <CheckCircle size={24} />
-              </Box>
-              <Box>
-                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>Documented</Typography>
-                <Typography variant="h5" sx={{ fontWeight: 700 }}>{documentedCases}</Typography>
-              </Box>
-            </CardContent>
-          </Card>
+        <Grid size={{ xs: 6, md: 3 }}>
+          <StatCard icon={<CheckCircle size={22} />} label={t('statDocumented')} value={documentedCases} tone="success" />
         </Grid>
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Card sx={{ background: 'linear-gradient(135deg, rgba(17, 24, 39, 0.7) 0%, rgba(31, 41, 55, 0.7) 100%)', backdropFilter: 'blur(10px)' }}>
-            <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6' }}>
-                <FileText size={24} />
-              </Box>
-              <Box>
-                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>Analyzed</Typography>
-                <Typography variant="h5" sx={{ fontWeight: 700 }}>{analyzedCases}</Typography>
-              </Box>
-            </CardContent>
-          </Card>
+        <Grid size={{ xs: 6, md: 3 }}>
+          <StatCard icon={<FileText size={22} />} label={t('statAnalyzed')} value={analyzedCases} tone="info" />
         </Grid>
       </Grid>
 
       {/* Search Bar */}
       <Paper
         component="form"
+        role="search"
         onSubmit={handleSearchSubmit}
+        variant="outlined"
         sx={{
           p: '2px 4px',
           display: 'flex',
           alignItems: 'center',
-          mb: 4,
-          background: '#111827',
-          border: '1px solid rgba(255, 255, 255, 0.08)',
-          borderRadius: 2,
-          boxShadow: 'none',
-          '&:hover': {
-            borderColor: 'rgba(6, 182, 212, 0.3)',
-          }
+          mb: 3,
+          '&:focus-within': { borderColor: 'primary.main', boxShadow: '0 0 0 1px var(--mui-palette-primary-main)' },
         }}
       >
-        <IconButton type="submit" sx={{ p: '10px', color: 'text.secondary' }} aria-label="search" id="btn-search-submit">
-          <Search size={20} />
+        <IconButton type="submit" sx={{ p: '10px', color: 'text.secondary' }} aria-label={t('searchCases')} id="btn-search-submit">
+          <Search size={20} aria-hidden="true" />
         </IconButton>
         <InputBase
           id="search-input"
@@ -210,23 +215,32 @@ export default function Dashboard() {
           placeholder={t('searchPlaceholder')}
           value={searchQuery}
           onChange={handleSearchChange}
+          inputProps={{ 'aria-label': t('searchPlaceholder') }}
         />
       </Paper>
 
       {/* Case Table */}
-      <TableContainer 
-        component={Paper} 
-        sx={{ 
-          background: '#111827', 
-          border: '1px solid rgba(255, 255, 255, 0.05)',
-          boxShadow: '0 4px 24px rgba(0,0,0,0.3)',
-          borderRadius: 3
-        }}
-      >
+      <TableContainer component={Paper} variant="outlined" sx={{ overflowX: 'auto' }}>
         {loading ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 8, flexDirection: 'column', gap: 2 }}>
             <CircularProgress color="primary" />
-            <Typography color="text.secondary">Loading cases...</Typography>
+            <Typography color="text.secondary" role="status">{t('loadingCases')}</Typography>
+          </Box>
+        ) : loadError ? (
+          <Box sx={{ textAlign: 'center', py: 8, px: 2 }}>
+            <Typography variant="h6" color="error.main" sx={{ mb: 1 }}>
+              {loadError}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              {t('loadCasesErrorHint')}
+            </Typography>
+            <Button
+              variant="contained"
+              startIcon={<RefreshCw size={18} aria-hidden="true" />}
+              onClick={() => fetchCases(searchQuery)}
+            >
+              {t('retry')}
+            </Button>
           </Box>
         ) : cases.length === 0 ? (
           <Box sx={{ textAlign: 'center', py: 8, px: 2 }}>
@@ -235,44 +249,38 @@ export default function Dashboard() {
             </Typography>
             <Button
               variant="contained"
-              startIcon={<Plus size={18} />}
+              startIcon={<Plus size={18} aria-hidden="true" />}
               onClick={() => navigate('/new')}
             >
               {t('newCase')}
             </Button>
           </Box>
         ) : (
-          <Table sx={{ minWidth: 650 }}>
-            <TableHead sx={{ bgcolor: 'rgba(255, 255, 255, 0.02)' }}>
+          <Table sx={{ minWidth: 720 }}>
+            <TableHead>
               <TableRow>
-                <TableCell sx={{ fontWeight: 600, color: 'text.secondary' }}>Case Number</TableCell>
-                <TableCell sx={{ fontWeight: 600, color: 'text.secondary' }}>FIR Narrative</TableCell>
-                <TableCell sx={{ fontWeight: 600, color: 'text.secondary' }}>Date Created</TableCell>
-                <TableCell sx={{ fontWeight: 600, color: 'text.secondary' }}>{t('status')}</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 600, color: 'text.secondary' }}>{t('actions')}</TableCell>
+                <TableCell>{t('caseNumber')}</TableCell>
+                <TableCell>{t('firNarrative')}</TableCell>
+                <TableCell>{t('dateCreated')}</TableCell>
+                <TableCell>{t('status')}</TableCell>
+                <TableCell align="right">{t('actions')}</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {cases.map((c) => (
-                <TableRow 
+                <TableRow
                   key={c.id}
                   hover
-                  sx={{ 
-                    cursor: 'pointer',
-                    transition: 'background-color 0.2s',
-                    '&:hover': {
-                      bgcolor: 'rgba(255, 255, 255, 0.015) !important'
-                    }
-                  }}
+                  sx={{ cursor: 'pointer' }}
                   onClick={() => navigate(`/case/${c.id}`)}
                 >
-                  <TableCell sx={{ fontWeight: 600, color: 'primary.light' }}>
+                  <TableCell sx={{ fontWeight: 700, color: 'primary.main', fontFamily: MONO_FONT, whiteSpace: 'nowrap' }}>
                     {c.case_number || 'N/A'}
                   </TableCell>
                   <TableCell sx={{ maxWidth: 350, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {c.fir_narrative}
                   </TableCell>
-                  <TableCell>
+                  <TableCell sx={{ whiteSpace: 'nowrap', color: 'text.secondary' }}>
                     {new Date(c.created_at).toLocaleDateString(undefined, {
                       year: 'numeric',
                       month: 'short',
@@ -281,18 +289,19 @@ export default function Dashboard() {
                       minute: '2-digit'
                     })}
                   </TableCell>
-                  <TableCell>{getStatusChip(c.status)}</TableCell>
+                  <TableCell><StatusChip status={c.status} /></TableCell>
                   <TableCell align="right">
-                    <Tooltip title="View Case Workspace">
-                      <IconButton 
+                    <Tooltip title={t('viewWorkspace')}>
+                      <IconButton
                         id={`btn-view-${c.id}`}
                         color="primary"
+                        aria-label={`Open workspace for case ${c.case_number || c.id.substring(0, 8)}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           navigate(`/case/${c.id}`);
                         }}
                       >
-                        <ArrowRight size={18} />
+                        <ArrowRight size={18} aria-hidden="true" />
                       </IconButton>
                     </Tooltip>
                   </TableCell>

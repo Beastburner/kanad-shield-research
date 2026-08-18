@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import UUID
 
+from asyncpg.exceptions import UniqueViolationError
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -25,6 +26,7 @@ from . import (
 from .db import close_pool, init_pool, pool
 from .models import (
     AnalyzeResult,
+    AuditEntry,
     Case,
     CaseCreate,
     CaseFacts,
@@ -90,10 +92,17 @@ async def _diary(case_id: UUID, event_type: str, description: str,
 # ---------------------------------------------------------------------------
 @app.post("/cases", response_model=Case, status_code=201)
 async def create_case(body: CaseCreate, actor: Actor = Depends(rbac.require("IO", "SHO"))):
-    row = await pool().fetchrow(
-        "INSERT INTO cases (case_number, fir_narrative) VALUES ($1,$2) RETURNING *",
-        body.case_number, body.fir_narrative,
-    )
+    try:
+        row = await pool().fetchrow(
+            "INSERT INTO cases (case_number, fir_narrative) VALUES ($1,$2) RETURNING *",
+            body.case_number, body.fir_narrative,
+        )
+    except UniqueViolationError:
+        # case_number is UNIQUE. An officer re-entering an existing FIR number should
+        # be told so, not handed an opaque 500.
+        raise HTTPException(
+            409, f"A case with number '{body.case_number}' already exists."
+        )
     await _diary(row["id"], "fir_filed", "FIR narrative recorded.", actor=str(actor))
     await audit.record("case.create", case_id=row["id"], actor=str(actor), after=dict(row))
     return Case(**dict(row))
@@ -360,6 +369,23 @@ async def add_diary_entry(case_id: UUID, body: DiaryCreate,
     await audit.record("diary.add", case_id=case_id, actor=str(actor),
                        after={"event_type": body.event_type, "description": body.description})
     return DiaryEntry(**dict(row))
+
+
+@app.get("/cases/{case_id}/audit", response_model=list[AuditEntry])
+async def get_audit_log(case_id: UUID, limit: int = 200):
+    """The append-only audit trail for a case, newest first.
+
+    Read-only by design: the table is guarded by triggers that reject UPDATE and
+    DELETE, so this endpoint exposes the chain of custody without exposing any way
+    to alter it. Every mutating endpoint writes here via audit.record()."""
+    await _get_case_row(case_id)
+    rows = await pool().fetch(
+        """SELECT id, case_id, doc_id, action, actor, before, after, occurred_at
+           FROM audit_log WHERE case_id = $1
+           ORDER BY occurred_at DESC LIMIT $2""",
+        case_id, limit,
+    )
+    return [AuditEntry(**dict(r)) for r in rows]
 
 
 # ---------------------------------------------------------------------------

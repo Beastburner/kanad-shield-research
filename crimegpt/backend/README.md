@@ -9,12 +9,15 @@ validation (confidence) → document generation (.docx) → SHA-256 + BSA s.63
 certificate + append-only audit log + case diary
 ```
 
-All legal references are **BNS / BNSS / BSA only** (no IPC/CrPC).
+Charging sections come from the codes **in force**: the **BNS** plus the special
+acts that create the offences real FIRs are charged under — **PC Act, IT Act, NDPS,
+Arms Act, POCSO**. Repealed IPC/CrPC/IEA provisions appear **only** as the
+`old_code_ref` cross-reference, never as a charge.
 The React frontend is built by a separate team — see **API_CONTRACT.md**.
 
 ## Tech
 
-FastAPI (async) · PostgreSQL + pgvector · Groq + LLaMA-3.3-70B · docxtpl/python-docx · hashlib (SHA-256)
+FastAPI (async) · PostgreSQL + pgvector · Groq (model set by `GROQ_MODEL`) · docxtpl/python-docx · hashlib (SHA-256)
 
 ## Prerequisites
 
@@ -38,6 +41,11 @@ docker compose up -d
 # 3. (only if the DB volume already existed) re-load the demo RAG corpus
 #    docker compose exec -T db psql -U crimegpt -d crimegpt < db/seed.sql
 
+# 3a. Special-act offence corpus (PC Act / IT Act / NDPS / Arms Act / POCSO).
+#     REQUIRED — without it, a bribery or narcotics FIR classifies to zero sections.
+#     Idempotent, so safe to run against an existing database.
+docker compose exec -T db psql -U crimegpt -d crimegpt < db/special_acts.sql
+
 # 4. Python env + deps
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
@@ -48,7 +56,52 @@ python -m scripts.embed_statutes
 
 # 6. Run the API
 uvicorn app.main:app --reload --port 8000
+
+# 7. Pre-demo regression check — runs the 13-scenario classifier pre-test.
+#    Exits non-zero on any FAIL. Run this before every demo.
+python -m scripts.run_scenarios
+
+# 8. Check both LLM providers respond and support JSON mode (cheap — a few
+#    hundred tokens). Run after setting NVIDIA_API_KEY.
+python -m scripts.check_providers
+
+# 9. Automated test suite — document generation, evidence integrity, RBAC and
+#    the append-only audit log. Needs the Postgres container up; costs no LLM
+#    tokens (it never calls /analyze).
+pytest
 ```
+
+### Tests
+
+`pytest` (from `backend/`) runs `tests/`, which pins the four claims the pitch
+makes: all 8 document types generate a real `.docx` + SHA-256 + s.63 certificate;
+the recorded hash is re-computed from the bytes on disk and must match; a
+Legal Advisor is 403'd on every write endpoint while IO/SHO are not; and the
+`audit_log` triggers reject UPDATE and DELETE over a raw connection.
+
+The suite talks to the real database (that is where the triggers and version
+history live) and **deliberately never calls the LLM** — analyzed state is seeded
+with direct INSERTs, so a test run cannot eat the 200k/day Groq quota. Cases it
+creates are prefixed `TEST-` and deleted at teardown; their `audit_log` rows are
+not, because the append-only trigger blocks that. That is the expected result,
+not a leak.
+
+`scripts/run_scenarios.py` is separate and still required before a demo — it
+pre-tests classifier *accuracy* and does spend tokens.
+
+## LLM providers & the quota trap
+
+Groq is primary (chosen for latency — it matters live). Its free tier is **200,000
+tokens/day**, roughly 25-40 analyses; exhausting it mid-demo drops the pipeline to
+the curated keyword mapping, which suggests sections but extracts **no facts**. The
+giveaway is a result showing exactly **70% confidence with empty facts** — 0.70 is
+the fallback constant, so that combination means the AI never ran.
+
+Set `NVIDIA_API_KEY` (https://build.nvidia.com — OpenAI-compatible) and a Groq quota
+429 fails over to NVIDIA instead of degrading. Verify with `scripts/check_providers`
+before trusting it: the pipeline depends on JSON-mode output, and support varies by
+model. If a provider rejects `response_format`, the client retries without it — the
+required JSON Schema is injected into the system prompt either way.
 
 Open http://localhost:8000/docs for interactive Swagger.
 
@@ -97,6 +150,7 @@ backend/
 │   └── seed.sql           demo BNS/BNSS/BSA corpus + judgment cache
 ├── scripts/
 │   └── embed_statutes.py  one-time embedding backfill (semantic retrieval)
+├── tests/                 pytest suite (documents, integrity, RBAC, audit log)
 ├── docker-compose.yml
 ├── requirements.txt
 ├── .env.example

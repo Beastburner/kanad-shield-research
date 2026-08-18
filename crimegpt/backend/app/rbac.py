@@ -33,13 +33,28 @@ class Actor:
 
 
 def current_actor(
-    x_actor_role: str = Header(default="IO"),
+    x_actor_role: str | None = Header(default=None),
     x_actor_name: str = Header(default="Officer"),
 ) -> Actor:
+    name = x_actor_name.strip() or "Officer"
+
+    # No header at all -> the documented default. There is no auth server in this
+    # build; an unattributed caller is treated as the Investigating Officer.
+    if x_actor_role is None or not x_actor_role.strip():
+        return Actor(role="IO", name=name)
+
     role = x_actor_role.upper().strip()
     if role not in _VALID:
-        role = "IO"
-    return Actor(role=role, name=x_actor_name.strip() or "Officer")
+        # Present but unrecognised -> fail CLOSED. This previously fell back to
+        # "IO", so a single-character typo ("LEGAL-ADVISOR" for "LEGAL_ADVISOR")
+        # silently escalated a read-only Legal Advisor to full write access —
+        # the exact opposite of the least-privilege model documented above.
+        raise HTTPException(
+            403,
+            f"Unrecognised actor role '{x_actor_role.strip()}'. "
+            f"Expected one of: {', '.join(sorted(_VALID))}.",
+        )
+    return Actor(role=role, name=name)
 
 
 def require(*allowed: Role):

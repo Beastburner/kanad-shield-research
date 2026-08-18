@@ -8,7 +8,7 @@ FIR narrative (text input)
         ▼
 ┌─────────────────────────┐
 │ 1. EXTRACTION AGENT     │  Pulls structured facts (names, dates, items, sequence)
-│   LLaMA 3.3-70B (Groq)  │  Output: structured JSON. Low hallucination (grounded in input).
+│   gpt-oss-120B (Groq)   │  Output: structured JSON. Low hallucination (grounded in input).
 └───────────┬─────────────┘
             ▼
 ┌─────────────────────────┐     ┌──────────────────────────────┐
@@ -56,6 +56,6 @@ FIR narrative (text input)
 
 ## Component Reuse From Our Prior Work
 
-- **PRISM** → multi-agent orchestration + Groq/LLaMA wiring.
+- **PRISM** → multi-agent orchestration + Groq wiring.
 - **LazyCook** → the 4-stage refinement pattern.
 - **VERONICA** → RAG retrieval pattern (inject only top-k relevant statute chunks).

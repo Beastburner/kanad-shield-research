@@ -61,8 +61,10 @@ recall — so the system reasons over the law rather than claiming to "know" it.
 
 ## Tools & Stack
 
-FastAPI (Python) · Groq + LLaMA-3.3-70B (4-agent orchestration) · PostgreSQL
-(full-text retrieval over the bare-act corpus; pgvector-ready) · python-docx for
+FastAPI (Python) · Groq + gpt-oss-120B, an open-weight model, for the 4-agent
+orchestration — open weights mean the same pipeline can later run on self-hosted
+government infrastructure · PostgreSQL + pgvector (semantic retrieval over the
+bare-act corpus, with full-text search as an automatic fallback) · python-docx for
 templated documents · hashlib (SHA-256) for evidence integrity · Tesseract OCR ·
 OpenCV (face matching) · React 18 + Vite + Material UI + react-i18next (frontend).
 Legal corpus from indiacode.nic.in (BNS/BNSS/BSA bare acts) and the Indian Kanoon

@@ -54,7 +54,7 @@ section/case-law mapping → digital case diary.
 | Layer | Choice | Why |
 |-------|--------|-----|
 | Backend | **FastAPI (Python)** | Known from VERONICA; async fits multi-agent pipeline |
-| LLM orchestration | **Groq + LLaMA 3.3-70B** | Reuse PRISM setup; fast inference for 4-stage pipeline |
+| LLM orchestration | **Groq + gpt-oss-120B** (open-weight) | Fast inference for the 4-stage pipeline; open weights mean the model can be self-hosted on government infrastructure later. LLaMA-3.3-70B was retired by Groq (404) |
 | Legal corpus | **indiacode.nic.in** (bare acts) + **Indian Kanoon API** (judgments) | Ground truth for RAG |
 | Vector DB | **pgvector on PostgreSQL** | Semantic retrieval; closes a target skill gap |
 | Doc generation | **docxtpl / python-docx** | Templated legal documents |

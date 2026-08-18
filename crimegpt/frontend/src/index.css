@@ -1,12 +1,11 @@
-/* Custom styles for CrimeGPT Portal */
+/* Global styles for the CrimeGPT portal.
+   Colours come from the MUI colour-scheme variables (see theme.ts) so light and
+   dark resolve from the same rules — nothing here hardcodes a palette value. */
 
 body {
   margin: 0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #0b0f19;
-  color: #f3f4f6;
   overflow-x: hidden;
 }
 
@@ -16,30 +15,60 @@ body {
   flex-direction: column;
 }
 
-/* Custom scrollbars */
+/* Keyboard-only users must be able to jump past the portal bar's
+   role/language controls to reach case content. */
+.skip-link {
+  position: absolute;
+  left: 8px;
+  top: -100px;
+  z-index: 2000;
+  padding: 12px 20px;
+  border-radius: 6px;
+  font-weight: 700;
+  text-decoration: none;
+  background: var(--mui-palette-primary-main);
+  color: var(--mui-palette-primary-contrastText);
+  transition: top 180ms ease;
+}
+
+.skip-link:focus {
+  top: 8px;
+}
+
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0b0f19;
+  background: var(--mui-palette-background-default);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1f2937;
-  border-radius: 4px;
+  background: var(--mui-palette-divider);
+  border-radius: 5px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #374151;
+  background: var(--mui-palette-text-secondary);
 }
 
-/* Simple animations */
+/* docx-preview renders a print-styled page; keep it on a paper-white sheet in
+   both schemes so the document looks like the filing it will become. */
+.docx-view {
+  background: #ffffff;
+  color: #111111;
+}
+
+.docx-view .docx-wrapper {
+  background: transparent;
+  padding: 0;
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
@@ -48,5 +77,14 @@ body {
 }
 
 .fade-in {
-  animation: fadeIn 0.3s ease-out forwards;
+  animation: fadeIn 220ms ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fade-in {
+    animation: none;
+  }
+  .skip-link {
+    transition: none;
+  }
 }

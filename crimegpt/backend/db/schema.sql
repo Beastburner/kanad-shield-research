@@ -36,16 +36,18 @@ CREATE TABLE IF NOT EXISTS case_facts (
 CREATE TABLE IF NOT EXISTS suggested_sections (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     case_id          UUID NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
-    code             TEXT NOT NULL,             -- BNS | BNSS | BSA
+    code             TEXT NOT NULL,             -- BNS | BNSS | BSA | special act
     section_no       TEXT NOT NULL,
     heading          TEXT,
-    old_code_ref     TEXT,                      -- cross-ref to repealed IPC/CrPC/IEA (PS requirement)
+    old_code_ref     TEXT,                      -- cross-ref to repealed IPC/CrPC/IEA (PS requirement);
+                                                -- NULL for special acts, which are unrepealed
     confidence       NUMERIC(4,3) NOT NULL DEFAULT 0,
     rationale        TEXT,
     statute_chunk_id UUID,                      -- traceback to retrieved statute text
     validated        BOOLEAN NOT NULL DEFAULT false,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CHECK (code IN ('BNS', 'BNSS', 'BSA'))
+    CHECK (code IN ('BNS', 'BNSS', 'BSA',
+                    'PC Act', 'IT Act', 'NDPS Act', 'Arms Act', 'POCSO'))
 );
 
 -- ---------------------------------------------------------------------------
@@ -144,8 +146,17 @@ CREATE TABLE IF NOT EXISTS statute_chunks (
     old_code_ref TEXT,                         -- repealed IPC/CrPC/IEA equivalent (cross-reference)
     keywords     TEXT,                         -- plain-language trigger terms for keyword recall
     embedding    vector(384),                  -- populate to switch to semantic retrieval
-    CHECK (code IN ('BNS', 'BNSS', 'BSA'))
+    -- BNS/BNSS/BSA are the general codes; the special acts create the offences
+    -- that a large share of real FIRs are actually charged under (bribery ->
+    -- PC Act, online fraud -> IT Act, narcotics -> NDPS). See db/special_acts.sql.
+    CHECK (code IN ('BNS', 'BNSS', 'BSA',
+                    'PC Act', 'IT Act', 'NDPS Act', 'Arms Act', 'POCSO'))
 );
+
+-- One row per section: without this, seed.sql's ON CONFLICT DO NOTHING is a
+-- no-op and re-running the seed duplicates the whole corpus.
+CREATE UNIQUE INDEX IF NOT EXISTS statute_chunks_code_section_uniq
+    ON statute_chunks (code, section_no);
 
 CREATE INDEX IF NOT EXISTS statute_chunks_embedding_idx
     ON statute_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);

@@ -154,9 +154,18 @@ All `facts` sub-fields optional; omit `accused`/`items`/etc. → treated as empt
 
 ## 6. Analyze — `POST /cases/{case_id}/analyze`  ⭐ core
 
-Runs the 4-agent pipeline: extraction → classification (RAG over BNS/BNSS/BSA) →
-validation → judgment retrieval. Persists facts/sections/judgments, updates case
-status, logs `analyzed` to the diary. **Requires `GROQ_API_KEY` to be set.**
+Runs the 4-agent pipeline: extraction → classification (RAG over the statute
+corpus) → validation → judgment retrieval. Persists facts/sections/judgments,
+updates case status, logs `analyzed` to the diary. **Requires `GROQ_API_KEY` to be
+set** — though if Groq is unreachable the request still returns a result built from
+the curated fallback mapping rather than erroring.
+
+`code` is an offence-creating code: **`BNS`** (the general penal code) or a special
+act — **`PC Act`**, **`IT Act`**, **`NDPS Act`**, **`Arms Act`**, **`POCSO`**. A
+bribery FIR is charged under the PC Act, an online fraud under the IT Act read with
+BNS 318/319. `BNSS` (procedure) and `BSA` (evidence) are never returned as charges.
+`old_code_ref` is **`null` for special acts** — they are in force, so there is no
+repealed equivalent to cross-reference; render the chip conditionally.
 
 No request body.
 
@@ -321,6 +330,33 @@ evidence collected — alongside the auto-logged system events.
 `description` min length 3. `event_type` optional (default `"officer_note"`).
 
 **Response `201`** — a DiaryEntry (`source: "officer"`). Errors: `403`, `404`, `422`.
+
+---
+
+## 8aa. Audit trail — `GET /cases/{case_id}/audit`
+
+The append-only audit log for a case, newest first. Every mutating endpoint writes
+here, attributed to the acting officer. **Read-only by design** — `audit_log` is
+guarded by database triggers that reject `UPDATE` and `DELETE`, so there is no API
+(and no SQL) path to alter history. Optional `?limit=` (default 200).
+
+**Response `200`**
+```json
+[
+  {
+    "id": "9f1c…",
+    "action": "document.generate",
+    "actor": "R. Patel (Investigating Officer)",
+    "case_id": "8f3a…",
+    "doc_id": "b21e…",
+    "before": null,
+    "after": { "type": "chargesheet", "version": 2, "sha256": "e3b0c442…" },
+    "occurred_at": "2026-06-15T10:10:00Z"
+  }
+]
+```
+Actions: `case.create`, `case.update`, `facts.update`, `case.analyze`,
+`document.generate`, `diary.add`, `evidence.upload`. Errors: `404`.
 
 ---
 
@@ -510,6 +546,7 @@ seconds (LLM). Show a spinner; no polling needed.
 - [x] GET /documents/{id}/certificate
 - [x] GET /cases/{id}/diary
 - [x] POST /cases/{id}/diary   (manual entry, P2)
+- [x] GET /cases/{id}/audit   (append-only audit trail)
 - [x] POST /cases/{id}/evidence   (multipart, P5)
 - [x] GET /cases/{id}/evidence
 - [x] GET /evidence/{id}/file

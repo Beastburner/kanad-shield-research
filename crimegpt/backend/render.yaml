@@ -1,0 +1,60 @@
+# Render blueprint for the CrimeGPT API.
+#
+# The service was previously configured only in Render's dashboard, so the build
+# and start commands lived nowhere in the repo and the deploy was not reproducible.
+# This file is that record. Apply with Render's "Blueprint" flow, or just keep it as
+# the reference for what the dashboard settings must say.
+#
+# Secrets are marked sync:false — set them in the Render dashboard, never here:
+#   GROQ_API_KEY             Groq inference (https://console.groq.com)
+#   INDIANKANOON_API_TOKEN   live case-law search; if unset the app silently uses
+#                            the seeded judgments_cache only, which is why the
+#                            deployed instance was returning cached judgments
+#   NVIDIA_API_KEY           fallback LLM provider. Groq's free tier is 200k
+#                            tokens/day; without this, exhausting it degrades the
+#                            pipeline to keyword-only with no fact extraction
+#
+# AFTER THE FIRST DEPLOY, against the Render database, run once:
+#   psql "$DATABASE_URL" -f db/schema.sql
+#   psql "$DATABASE_URL" -f db/seed.sql
+#   psql "$DATABASE_URL" -f db/special_acts.sql   # special-act offence corpus
+#   python -m scripts.embed_statutes              # optional: semantic retrieval
+# Without special_acts.sql, bribery / IT Act / NDPS / Arms Act / POCSO cases
+# classify to zero sections. Without embed_statutes, retrieval uses keyword search
+# (supported, just less precise).
+
+services:
+  - type: web
+    name: crimegpt-api
+    runtime: python
+    plan: free
+    rootDir: crimegpt/backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: crimegpt-db
+          property: connectionString
+      - key: GROQ_API_KEY
+        sync: false
+      - key: INDIANKANOON_API_TOKEN
+        sync: false
+      - key: NVIDIA_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-120b
+      - key: CONFIDENCE_THRESHOLD
+        value: "0.6"
+      - key: ARTIFACT_DIR
+        value: ./artifacts
+
+databases:
+  # pgvector is available on Render Postgres; schema.sql creates the extension.
+  - name: crimegpt-db
+    plan: free
+    databaseName: crimegpt
+    user: crimegpt
