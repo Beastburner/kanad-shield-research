@@ -408,7 +408,12 @@ def _build_accused_panchanama(d, facts, sections, case_number, evidence=()):
     ])
 
     _heading(d, "Personal Search — Articles Found on Person")
-    _property_block(d, facts)
+    # NOT facts.items — those are the articles reported STOLEN, not what was
+    # recovered from the accused's person. The system holds no data for this, and
+    # a court document must not assert that a stolen motorcycle was found in
+    # someone's pocket. Blank rows for the arresting officer.
+    _table(d, ["S.No", "Description", "Identifying marks", "Qty", "Est. value"],
+           [["1", _BLANK, "", "", ""], ["2", _BLANK, "", "", ""]])
 
     _heading(d, "Recording (Section 105 BNSS)")
     _para(d, "The arrest and personal search were conducted in the presence of two "
