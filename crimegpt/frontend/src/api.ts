@@ -142,6 +142,16 @@ export interface ScreenResult {
   note: string;
 }
 
+// 409 payload from the duplicate-FIR guard on POST /cases.
+export interface DuplicateFirDetail {
+  code: 'duplicate_fir';
+  message: string;
+  existing_case_id: string;
+  existing_case_number: string | null;
+  created_at: string;
+  similarity: number;
+}
+
 export interface AuditEntry {
   id: string;
   action: string;
@@ -217,10 +227,13 @@ export interface OCRResponse {
 
 export const api = {
   // Cases
-  createCase: async (firNarrative: string, caseNumber?: string): Promise<Case> => {
+  // force skips the duplicate-FIR guard — set it only after the officer has been
+  // shown the existing case and chosen to register anyway.
+  createCase: async (firNarrative: string, caseNumber?: string, force = false): Promise<Case> => {
     const response = await apiClient.post<Case>('/cases', {
       fir_narrative: firNarrative,
       case_number: caseNumber || undefined,
+      force,
     });
     return response.data;
   },

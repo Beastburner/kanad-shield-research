@@ -145,7 +145,11 @@ def case_factory(client, purge):
     def _make(analyzed: bool = True) -> str:
         response = client.post(
             "/cases",
-            json={"case_number": f"TEST-{uuid4().hex[:8]}", "fir_narrative": FIR_NARRATIVE},
+            # force=True: every factory case shares FIR_NARRATIVE, and the
+            # duplicate-FIR guard would otherwise 409 whenever two tests' cases
+            # coexist. Duplicate detection has its own suite (test_duplicate_fir).
+            json={"case_number": f"TEST-{uuid4().hex[:8]}",
+                  "fir_narrative": FIR_NARRATIVE, "force": True},
             headers=H_IO,
         )
         assert response.status_code == 201, response.text

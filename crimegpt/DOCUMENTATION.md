@@ -76,7 +76,7 @@ backend/
 │   ├── run_scenarios.py   13-scenario classifier gate (run before every demo)
 │   ├── check_providers.py verifies both LLM providers return parseable JSON
 │   └── embed_statutes.py  backfills pgvector embeddings (semantic retrieval)
-├── tests/                 47 tests: documents, integrity, RBAC, audit, forensics
+├── tests/                 52 tests: documents, integrity, RBAC, audit, forensics, duplicates
 ├── docker-compose.yml     Postgres 16 + pgvector, auto-applies schema+seed
 └── render.yaml            deployment config (Render blueprint)
 ```
@@ -135,7 +135,7 @@ Every endpoint lives here; there are no hidden routers. Highlights:
 
 | Endpoint | What it does |
 |---|---|
-| `POST /cases`, `GET /cases?q=`, `GET/PATCH /cases/{id}` | case CRUD + keyword search |
+| `POST /cases`, `GET /cases?q=`, `GET/PATCH /cases/{id}` | case CRUD + keyword search; creation is guarded against duplicate FIRs (409 with the existing case; `force` overrides) |
 | `GET/PATCH /cases/{id}/facts` | read / correct the extracted facts |
 | `POST /cases/{id}/analyze` | run the 4-stage pipeline |
 | `GET /cases/{id}/analysis` | read the stored result without re-running the LLM |
@@ -253,9 +253,11 @@ EXIF (noted as normal for WhatsApp forwards), and an error-level-analysis score
 for JPEGs (reported as indicative only). Every response carries a standing note:
 *screening, not a forensic finding — certified opinion rests with the FSL /
 Examiner of Electronic Evidence* — the same fail-closed philosophy as the blank
-s.63 Part B. Exposed as `POST /forensics/screen` (read-only, all roles, audited)
-and as the "Document Tamper Screening" panel in the Tools tab. Tested against a
-real incremental-save edit (test_forensics.py).
+s.63 Part B. Exposed as `POST /forensics/screen` (read-only, all roles, audited) and run
+AUTOMATICALLY on every scanned-FIR upload on the New Case page — one upload,
+two results: OCR text plus tamper triage on the same bytes (screening failure
+never blocks OCR). Tested against a real incremental-save edit, and against the
+linearised-PDF false positive (test_forensics.py).
 
 ### mocks.py
 `POST /mock/cctns/fir` returns a simulated FIR record; `GET
@@ -458,7 +460,12 @@ search response can never overwrite a newer one (request-sequence guard).
 
 ### New Case
 FIR entry with three intake routes: typed narrative, mock-CCTNS import, OCR
-upload.
+upload — and every OCR upload is tamper-screened automatically, with the triage
+flags shown beside the extracted text. Registration is duplicate-guarded: the
+same FIR entered twice (including a re-scan of the same page, matched fuzzily
+because OCR is not byte-stable) is answered with "already in the database" and
+a button to open the existing case — the officer can still register
+deliberately, which sends `force: true`.
 
 ### Case Workspace — the 7 tabs
 1. **Facts Extraction** — the unified pool, fully editable, "Save Fact
@@ -472,8 +479,9 @@ upload.
 4. **Case Diary** — timeline with event-type icons; manual entries for IO/SHO.
 5. **Evidence & Face Match** — upload with tags (hashed at receipt), face-match
    panel with its not-forensic caveat.
-6. **Mock Integrations & Tools** — CCTNS FIR import, BharatPol lookup, quick
-   translation tool.
+6. **Mock Integrations & Tools** — BharatPol lookup, quick translation tool.
+   (The mock-CCTNS FIR *import* and document tamper screening live on the New
+   Case page, where intake happens.)
 7. **Audit Trail** — the append-only log rendered as a table (when / action /
    actor / change), labelled append-only.
 
@@ -493,7 +501,7 @@ upload.
 
 | Gate | What it proves | Cost |
 |---|---|---|
-| `python -m pytest` (47 tests, ~6 s) | all 9 document types produce valid OOXML with hash + certificate; the stored SHA-256 matches an **independent recomputation from the file bytes** and appears inside the certificate; version supersession; RBAC allow/deny incl. the fail-closed regression; audit log UPDATE/DELETE **refused at the database level** over a raw connection | zero LLM tokens |
+| `python -m pytest` (52 tests, ~7 s) | all 9 document types produce valid OOXML with hash + certificate; the stored SHA-256 matches an **independent recomputation from the file bytes** and appears inside the certificate; version supersession; RBAC allow/deny incl. the fail-closed regression; audit log UPDATE/DELETE **refused at the database level** over a raw connection | zero LLM tokens |
 | `python -m scripts.run_scenarios` (13 scenarios) | the classifier returns the expected primary sections; **hard-fails if any repealed IPC/CrPC/IEA section ever appears as a charge** | ~⅓ of a free-tier Groq day — run early, not repeatedly |
 | `python -m scripts.check_providers` | both LLM providers reachable and returning parseable JSON | a few hundred tokens |
 

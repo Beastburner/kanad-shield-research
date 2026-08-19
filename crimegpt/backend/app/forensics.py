@@ -109,15 +109,20 @@ def _screen_pdf(data: bytes) -> list[dict]:
         raise ScreeningError("file is not a readable PDF")
 
     with doc:
-        # 1. Incremental updates. A PDF edit APPENDS a new xref section; the
-        #    original bytes stay in the file. >1 startxref ⇒ modified after it
-        #    was first written. (Linearised files can carry an extra one — the
-        #    count is reported so the officer sees magnitude.)
+        # 1. Incremental updates. A PDF edit APPENDS a new xref section; more
+        #    startxref markers than the format itself accounts for ⇒ modified
+        #    after it was first written. CRITICAL baseline detail: a LINEARISED
+        #    ("fast web view") PDF legitimately contains TWO startxref markers —
+        #    Adobe, Word and government portals produce these routinely — so the
+        #    baseline is 2 when the /Linearized dictionary is present, else 1.
+        #    Without this, every ordinary downloaded PDF screened as "tampered".
         starts = data.count(b"startxref")
-        if starts > 1:
+        baseline = 2 if b"/Linearized" in data[:2048] else 1
+        updates = starts - baseline
+        if updates > 0:
             flags.append(_flag(
                 "pdf.incremental_updates", "warning",
-                f"File was modified after creation ({starts - 1} incremental update(s))",
+                f"File was modified after creation ({updates} incremental update(s))",
                 "The PDF format appends edits rather than rewriting the file, so "
                 "earlier content may still be recoverable from this same file. "
                 "Legitimate for e-signature workflows; suspicious for a document "
@@ -143,12 +148,6 @@ def _screen_pdf(data: bytes) -> list[dict]:
                 f"Producer/Creator metadata: {meta.get('producer', '')!r} / "
                 f"{meta.get('creator', '')!r}. An editing tool in the chain does "
                 "not prove tampering, but a claimed scan should name a scanner.",
-            ))
-        elif tool.strip() and not any(h in tool for h in _SCANNER_HINTS):
-            flags.append(_flag(
-                "pdf.software", "info",
-                "Producing software is not a recognised scanner pipeline",
-                f"Producer/Creator: {meta.get('producer', '')!r} / {meta.get('creator', '')!r}.",
             ))
 
         # 3. Text layer over a scanned page.
@@ -226,13 +225,23 @@ def _screen_image(data: bytes) -> list[dict]:
         ))
 
     if not exif:
-        flags.append(_flag(
-            "image.exif_missing", "info",
-            "No EXIF metadata",
-            "Metadata was stripped. WhatsApp and most social platforms do this "
-            "routinely, so on its own this is weak — but it also means capture "
-            "time and device cannot be corroborated from the file.",
-        ))
+        if img.format == "JPEG":
+            flags.append(_flag(
+                "image.exif_missing", "info",
+                "No EXIF metadata",
+                "Metadata was stripped. WhatsApp and most social platforms do this "
+                "routinely, so on its own this is weak — but it also means capture "
+                "time and device cannot be corroborated from the file.",
+            ))
+        else:
+            flags.append(_flag(
+                "image.format_limited", "info",
+                f"{img.format or 'This'} format carries little screening signal",
+                "Screenshots and PNG exports hold no camera metadata and do not "
+                "respond to JPEG error-level analysis, so a clean screen here "
+                "means very little either way. Obtain the original capture "
+                "(camera JPEG) where authenticity matters.",
+            ))
 
     if img.format == "JPEG":
         score = _ela_score(img)

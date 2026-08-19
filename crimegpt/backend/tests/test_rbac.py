@@ -16,7 +16,10 @@ from .conftest import FIR_NARRATIVE, H_IO, H_LEGAL, H_SHO
 
 
 def _new_case_payload() -> dict:
-    return {"case_number": f"TEST-{uuid4().hex[:8]}", "fir_narrative": FIR_NARRATIVE}
+    # force=True for the same reason as conftest's factory: shared narrative,
+    # and RBAC tests are about roles, not duplicate detection.
+    return {"case_number": f"TEST-{uuid4().hex[:8]}",
+            "fir_narrative": FIR_NARRATIVE, "force": True}
 
 
 # ---------------------------------------------------------------------------

@@ -19,9 +19,10 @@ import {
   Upload, 
   FileText, 
   Sparkles,
-  AlertCircle
+  AlertCircle,
+  ShieldAlert
 } from 'lucide-react';
-import { api } from '../api';
+import { api, type ScreenResult, type DuplicateFirDetail } from '../api';
 
 export default function NewCase() {
   const { t } = useTranslation();
@@ -34,6 +35,10 @@ export default function NewCase() {
   const [loading, setLoading] = useState(false);
   const [importingCctns, setImportingCctns] = useState(false);
   const [uploadingOcr, setUploadingOcr] = useState(false);
+  // Tamper screening runs automatically on the same scanned file that goes to
+  // OCR — the point of intake is exactly where "was this edited?" matters.
+  const [screenResult, setScreenResult] = useState<ScreenResult | null>(null);
+  const [duplicate, setDuplicate] = useState<DuplicateFirDetail | null>(null);
   
   const [error, setError] = useState<string | null>(null);
   // Validate on blur rather than only on submit, and show it on the field.
@@ -43,7 +48,7 @@ export default function NewCase() {
   const narrativeTooShort = firNarrative.trim().length < 10;
   const showNarrativeError = narrativeTouched && narrativeTooShort;
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent, force = false) => {
     e.preventDefault();
     if (narrativeTooShort) {
       setNarrativeTouched(true);
@@ -54,14 +59,23 @@ export default function NewCase() {
     try {
       setLoading(true);
       setError(null);
-      const newCase = await api.createCase(firNarrative.trim(), caseNumber.trim());
+      setDuplicate(null);
+      const newCase = await api.createCase(firNarrative.trim(), caseNumber.trim(), force);
       setSuccessMsg(t('caseCreated'));
       setTimeout(() => {
         navigate(`/case/${newCase.id}`);
       }, 1200);
     } catch (err: any) {
       console.error(err);
-      setError(err.response?.data?.detail || t('createCaseFailed'));
+      const detail = err.response?.data?.detail;
+      if (err.response?.status === 409 && detail?.code === 'duplicate_fir') {
+        // Not an error — the FIR is already registered. Show the existing case
+        // instead of a failure message.
+        setDuplicate(detail);
+      } else {
+        // detail can be an object on other 4xx shapes; never render one raw.
+        setError(typeof detail === 'string' ? detail : t('createCaseFailed'));
+      }
     } finally {
       setLoading(false);
     }
@@ -95,7 +109,16 @@ export default function NewCase() {
     try {
       setUploadingOcr(true);
       setError(null);
-      const ocrResult = await api.ocrScannedFIR(file, 'eng');
+      setScreenResult(null);
+      // One upload, two results: text extraction and tamper triage on the SAME
+      // bytes. Screening failure must never block OCR, hence allSettled.
+      const [ocrOutcome, screenOutcome] = await Promise.allSettled([
+        api.ocrScannedFIR(file, 'eng'),
+        api.screenDocument(file),
+      ]);
+      if (ocrOutcome.status === 'rejected') throw ocrOutcome.reason;
+      const ocrResult = ocrOutcome.value;
+      if (screenOutcome.status === 'fulfilled') setScreenResult(screenOutcome.value);
       setFirNarrative(ocrResult.text);
       const how = ocrResult.source === 'pdf_text' ? t('ocrSourcePdfText')
         : ocrResult.source === 'pdf_ocr' ? t('ocrSourcePdfOcr') : t('ocrSourceImage');
@@ -134,6 +157,31 @@ export default function NewCase() {
               {error && (
                 <Alert severity="error" role="alert" icon={<AlertCircle size={20} />} sx={{ mb: 3, borderRadius: 2 }}>
                   {error}
+                </Alert>
+              )}
+
+              {duplicate && (
+                <Alert severity="warning" role="alert" sx={{ mb: 3, borderRadius: 2 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 700, mb: 0.5 }}>
+                    {t('duplicateFirTitle')}
+                  </Typography>
+                  <Typography variant="body2" sx={{ mb: 1.5 }}>
+                    {t('duplicateFirBody', {
+                      case: duplicate.existing_case_number || duplicate.existing_case_id.slice(0, 8),
+                      date: new Date(duplicate.created_at).toLocaleDateString(),
+                      similarity: Math.round(duplicate.similarity * 100),
+                    })}
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
+                    <Button size="small" variant="contained"
+                      onClick={() => navigate(`/case/${duplicate.existing_case_id}`)}>
+                      {t('openExistingCase')}
+                    </Button>
+                    <Button size="small" variant="outlined" color="warning" disabled={loading}
+                      onClick={(e) => handleSubmit(e as unknown as React.FormEvent, true)}>
+                      {t('registerAnyway')}
+                    </Button>
+                  </Box>
                 </Alert>
               )}
 
@@ -251,6 +299,27 @@ export default function NewCase() {
                     >
                       {uploadingOcr ? t('parsingFIR') : t('uploadScannedFIR')}
                     </Button>
+
+                    {screenResult && (
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 1 }}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 0.8 }}>
+                          <ShieldAlert size={15} aria-hidden="true" style={{ color: 'var(--mui-palette-warning-main)' }} />
+                          {t('screenTitle')}
+                        </Typography>
+                        {screenResult.flags.map((f, i) => (
+                          <Alert key={i} sx={{ py: 0.5, alignItems: 'flex-start' }}
+                            severity={f.severity === 'warning' ? 'warning'
+                              : f.severity === 'caution' ? 'info'
+                              : f.check === 'overall' ? 'success' : 'info'}>
+                            <Typography variant="body2" sx={{ fontWeight: 600 }}>{f.finding}</Typography>
+                            <Typography variant="caption" color="text.secondary">{f.detail}</Typography>
+                          </Alert>
+                        ))}
+                        <Typography variant="caption" sx={{ color: 'text.secondary', fontStyle: 'italic' }}>
+                          {screenResult.note}
+                        </Typography>
+                      </Box>
+                    )}
                   </Box>
                 </CardContent>
               </Card>

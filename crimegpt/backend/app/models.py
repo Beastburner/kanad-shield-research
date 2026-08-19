@@ -31,6 +31,10 @@ DISCLAIMER = "AI-assisted draft — officer review required."
 class CaseCreate(BaseModel):
     fir_narrative: str = Field(min_length=10)
     case_number: str | None = None
+    # An officer may legitimately need to re-register (e.g. a fresh FIR quoting an
+    # old one verbatim). force=true skips the duplicate-FIR check — the frontend
+    # sets it only after showing the officer the existing case first.
+    force: bool = False
 
 
 class CaseUpdate(BaseModel):

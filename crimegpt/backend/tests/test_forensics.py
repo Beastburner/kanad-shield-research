@@ -68,6 +68,30 @@ def test_incrementally_saved_pdf_is_flagged():
     assert checks["pdf.incremental_updates"]["severity"] == "warning"
 
 
+def test_linearized_pdf_is_not_a_false_positive():
+    """Regression: a linearised ("fast web view") PDF legitimately carries TWO
+    startxref markers — Adobe/Word/government portals produce these routinely.
+    The naive count flagged every such untouched file as "modified after
+    creation", which made the tool look like it gives fake answers."""
+    import tempfile, os
+    from app import forensics
+
+    doc = fitz.open()
+    doc.new_page().insert_text((72, 72), "untouched linearised document")
+    fd, path = tempfile.mkstemp(suffix=".pdf")
+    os.close(fd)
+    try:
+        doc.save(path, linear=True)
+        doc.close()
+        with open(path, "rb") as f:
+            data = f.read()
+    finally:
+        os.unlink(path)
+    assert data.count(b"startxref") == 2          # the trap this test guards
+    result = forensics.screen(data)
+    assert "pdf.incremental_updates" not in {f["check"] for f in result["flags"]}
+
+
 def test_clean_pdf_does_not_raise_the_edit_flag():
     from app import forensics
 

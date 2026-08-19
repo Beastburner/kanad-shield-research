@@ -94,8 +94,58 @@ async def _diary(case_id: UUID, event_type: str, description: str,
 # ---------------------------------------------------------------------------
 # cases
 # ---------------------------------------------------------------------------
+def _normalise_narrative(text: str) -> str:
+    """Whitespace-insensitive form for duplicate comparison — two OCR passes of
+    the same page differ in line breaks and spacing before anything else."""
+    return " ".join(text.split()).lower()
+
+
+async def _find_duplicate_case(narrative: str) -> dict | None:
+    """Return the existing case this narrative duplicates, or None.
+
+    Two tiers, because the duplicate that actually happens is the same PHYSICAL
+    FIR scanned twice — and OCR is not byte-stable between passes:
+      1. exact match after whitespace normalisation (cheap, catches re-pastes);
+      2. fuzzy match (difflib ratio ≥ 0.92) against cases of similar length —
+         catches the re-scan where a few characters read differently.
+    The length pre-filter keeps this O(similar cases), fine at station scale."""
+    from difflib import SequenceMatcher
+
+    norm = _normalise_narrative(narrative)
+    lo, hi = int(len(norm) * 0.8), int(len(norm) * 1.25) + 20
+    rows = await pool().fetch(
+        """SELECT id, case_number, fir_narrative, created_at FROM cases
+           WHERE length(fir_narrative) BETWEEN $1 AND $2
+           ORDER BY created_at DESC LIMIT 200""",
+        lo, hi,
+    )
+    for r in rows:
+        existing = _normalise_narrative(r["fir_narrative"])
+        if existing == norm:
+            return {**dict(r), "similarity": 1.0}
+        ratio = SequenceMatcher(None, norm, existing).ratio()
+        if ratio >= 0.92:
+            return {**dict(r), "similarity": round(ratio, 3)}
+    return None
+
+
 @app.post("/cases", response_model=Case, status_code=201)
 async def create_case(body: CaseCreate, actor: Actor = Depends(rbac.require("IO", "SHO"))):
+    # Duplicate-FIR guard: the same scanned FIR registered twice creates two
+    # parallel case files for one incident — the exact inconsistency this system
+    # exists to prevent. 409 carries the existing case so the frontend can offer
+    # "open it" (or re-register deliberately with force=true).
+    if not body.force:
+        dup = await _find_duplicate_case(body.fir_narrative)
+        if dup is not None:
+            raise HTTPException(409, {
+                "code": "duplicate_fir",
+                "message": "This FIR narrative already exists in the database.",
+                "existing_case_id": str(dup["id"]),
+                "existing_case_number": dup["case_number"],
+                "created_at": dup["created_at"].isoformat(),
+                "similarity": dup["similarity"],
+            })
     try:
         row = await pool().fetchrow(
             "INSERT INTO cases (case_number, fir_narrative) VALUES ($1,$2) RETURNING *",
