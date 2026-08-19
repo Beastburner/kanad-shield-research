@@ -40,6 +40,10 @@ _MAX_WAIT_S = 25.0
 # round-trip on every subsequent call.
 _no_json_mode: set[str] = set()
 
+# Same latch for reasoning_effort (gpt-oss on Groq accepts it; a different
+# GROQ_MODEL might 400 on it, and that must degrade, not fail the pipeline).
+_no_reasoning_effort: set[str] = set()
+
 
 def client() -> AsyncGroq:
     global _client
@@ -78,8 +82,10 @@ def _rejects_json_mode(status: int, body: str) -> bool:
 
 
 async def _groq_chat(system: str, user: str, *, json_mode: bool,
-                     temperature: float) -> str:
+                     temperature: float, reasoning_effort: str | None = None,
+                     max_tokens: int | None = None) -> str:
     """Primary provider. Raises on quota exhaustion so the caller can fail over."""
+    regenerated = False   # one-shot guard for json_validate_failed regeneration
     for attempt in range(_MAX_RETRIES + 1):
         kwargs = {
             "model": settings.groq_model,
@@ -91,12 +97,37 @@ async def _groq_chat(system: str, user: str, *, json_mode: bool,
         }
         if json_mode and "groq" not in _no_json_mode:
             kwargs["response_format"] = {"type": "json_object"}
+        if max_tokens is not None:
+            kwargs["max_tokens"] = max_tokens
+        if reasoning_effort is not None and "groq" not in _no_reasoning_effort:
+            # groq SDK 0.9.0 has no named param for this; extra_body merges it
+            # into the request JSON, which the API accepts for gpt-oss models.
+            kwargs["extra_body"] = {"reasoning_effort": reasoning_effort}
         try:
             resp = await client().chat.completions.create(**kwargs)
             return resp.choices[0].message.content or ""
         except Exception as e:
             if _rejects_json_mode(getattr(e, "status_code", 0), str(e)):
                 _no_json_mode.add("groq")
+                continue
+            # json_validate_failed is checked BEFORE the reasoning_effort latch:
+            # its 400 body embeds the failed generation, and if that text happened
+            # to contain the literal "reasoning_effort" the broad substring latch
+            # below would permanently disable the parameter.
+            if (getattr(e, "status_code", 0) == 400
+                    and "json_validate_failed" in str(e)
+                    and not regenerated):
+                # The model emitted malformed JSON once (observed: "0. nine" for
+                # 0.9) and Groq's json mode 400'd. Generation isn't bit-identical
+                # even at temperature 0, so one regeneration usually parses —
+                # without it this single glitch dumps the whole analysis to the
+                # keyword fallback. True one-shot: the flag, not the attempt
+                # counter, bounds it.
+                regenerated = True
+                print("[llm] groq json_validate_failed; regenerating once")
+                continue
+            if getattr(e, "status_code", 0) == 400 and "reasoning_effort" in str(e):
+                _no_reasoning_effort.add("groq")
                 continue
             wait = _rate_limit_wait(e)
             if wait is not None and wait <= _MAX_WAIT_S and attempt < _MAX_RETRIES:
@@ -145,11 +176,18 @@ async def _nvidia_chat(system: str, user: str, *, json_mode: bool,
 
 
 async def _chat(system: str, user: str, *, json_mode: bool,
-                temperature: float) -> str:
-    """Groq, falling over to NVIDIA when Groq cannot serve the call at all."""
+                temperature: float, reasoning_effort: str | None = None,
+                max_tokens: int | None = None) -> str:
+    """Groq, falling over to NVIDIA when Groq cannot serve the call at all.
+
+    reasoning_effort / max_tokens are Groq-only tuning: the NVIDIA fallback model
+    (llama, no reasoning tokens) would reject the former and already carries its
+    own 4096 output cap."""
     try:
         return await _groq_chat(system, user, json_mode=json_mode,
-                                temperature=temperature)
+                                temperature=temperature,
+                                reasoning_effort=reasoning_effort,
+                                max_tokens=max_tokens)
     except Exception as e:
         if not settings.nvidia_api_key:
             raise
@@ -171,12 +209,19 @@ def _strip_fences(raw: str) -> str:
     return (m.group(1) if m else raw).strip()
 
 
-async def complete_json(system: str, user: str, schema: Type[T]) -> T:
+async def complete_json(system: str, user: str, schema: Type[T], *,
+                        reasoning_effort: str | None = None,
+                        max_tokens: int | None = None) -> T:
     """Call the LLM in JSON mode and parse into `schema`.
 
     The JSON schema of `schema` is injected into the system prompt so the model
     knows the exact shape to emit — this is the anti-free-form-garbage guard, and
     the reason a provider without a response_format parameter still works.
+
+    `reasoning_effort` ("low"/"medium"/"high", Groq gpt-oss only) and `max_tokens`
+    let latency-critical structured calls cap the reasoning/output token spend —
+    on the free tier fewer tokens is also fewer TPM-limit sleeps. None = provider
+    defaults (unchanged behaviour for existing callers).
     """
     schema_json = json.dumps(schema.model_json_schema())
     system_full = (
@@ -191,6 +236,8 @@ async def complete_json(system: str, user: str, schema: Type[T]) -> T:
         # deterministic: borderline cases shouldn't flip across the confidence
         # threshold on re-run (same FIR -> same verdict)
         temperature=0,
+        reasoning_effort=reasoning_effort,
+        max_tokens=max_tokens,
     )
     try:
         return schema.model_validate_json(_strip_fences(raw) or "{}")

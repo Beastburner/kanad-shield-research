@@ -164,18 +164,26 @@ export default function Header() {
             {/* Role / Actor switcher (P4 — RBAC) */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <UserCog size={18} aria-hidden="true" style={{ color: ON_BAR_MUTED, flexShrink: 0 }} />
-              <TextField
-                id="actor-name"
-                value={name}
-                onChange={(e) => update(role, e.target.value)}
-                placeholder={t('officerName')}
-                slotProps={{ htmlInput: { 'aria-label': t('officerName') } }}
-                sx={{
-                  width: 140,
-                  '& .MuiInputBase-root': { ...controlSx },
-                  '& input::placeholder': { color: ON_BAR_MUTED, opacity: 1 },
-                }}
-              />
+              {/* This name is what the audit trail attributes every action to, so a
+                  blank or throwaway value quietly weakens the one record that is
+                  supposed to be unfalsifiable. Flag it rather than accept it. */}
+              <Tooltip title={t('officerNameHint')}>
+                <TextField
+                  id="actor-name"
+                  size="small"
+                  value={name}
+                  error={name.trim().length < 3}
+                  onChange={(e) => update(role, e.target.value)}
+                  onBlur={(e) => update(role, e.target.value.trim())}
+                  placeholder={t('officerName')}
+                  slotProps={{ htmlInput: { 'aria-label': t('officerName'), maxLength: 40 } }}
+                  sx={{
+                    width: 170,
+                    '& .MuiInputBase-root': { ...controlSx },
+                    '& input::placeholder': { color: ON_BAR_MUTED, opacity: 1 },
+                  }}
+                />
+              </Tooltip>
               <FormControl size="small" variant="outlined">
                 <Select
                   id="select-role"

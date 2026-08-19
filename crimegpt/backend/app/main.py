@@ -334,7 +334,13 @@ async def create_document(case_id: UUID, body: DocumentRequest,
     sections = [SuggestedSection(**dict(r)) for r in sec_rows]
 
     case_number = case["case_number"] or str(case_id)
-    doc_path = documents.generate(body.type, case_number, facts, sections)
+    # The chargesheet's s.193(3) row records the custody of electronic records,
+    # so the generator needs what the evidence locker actually holds.
+    ev_rows = await pool().fetch(
+        "SELECT label, sha256 FROM evidence WHERE case_id = $1 ORDER BY uploaded_at",
+        case_id)
+    doc_path = documents.generate(body.type, case_number, facts, sections,
+                                  [dict(r) for r in ev_rows])
     # Translate the document BEFORE hashing so the hash matches the delivered file.
     if body.lang != "en":
         await translate_mod.translate_docx_file(doc_path, body.lang)
@@ -383,16 +389,26 @@ async def _doc_file(doc_id: UUID, column: str) -> str:
     return path
 
 
+# Served files are immutable by construction: every generation writes a NEW
+# uuid-named file and a NEW documents/evidence row (old versions are marked
+# superseded, never overwritten), and the file's SHA-256 is recorded at
+# creation. New content therefore always means a new id and a new URL, so the
+# bytes behind a given URL can never change — the browser may cache them
+# forever, making every repeat open of a document/certificate/evidence file
+# instant instead of a full Render round trip.
+_IMMUTABLE_CACHE = {"Cache-Control": "public, max-age=31536000, immutable"}
+
+
 @app.get("/documents/{doc_id}/file")
 async def download_document(doc_id: UUID):
     path = await _doc_file(doc_id, "file_path")
-    return FileResponse(path, filename=Path(path).name)
+    return FileResponse(path, filename=Path(path).name, headers=_IMMUTABLE_CACHE)
 
 
 @app.get("/documents/{doc_id}/certificate")
 async def download_certificate(doc_id: UUID):
     path = await _doc_file(doc_id, "s63_cert_path")
-    return FileResponse(path, filename=Path(path).name)
+    return FileResponse(path, filename=Path(path).name, headers=_IMMUTABLE_CACHE)
 
 
 # ---------------------------------------------------------------------------
@@ -493,7 +509,10 @@ async def download_evidence(evidence_id: UUID):
     row = await pool().fetchrow("SELECT file_path FROM evidence WHERE id = $1", evidence_id)
     if row is None or not Path(row["file_path"]).is_file():
         raise HTTPException(404, "evidence file not found")
-    return FileResponse(row["file_path"], filename=Path(row["file_path"]).name)
+    # Immutable for the same reason as documents: uploads are content-addressed
+    # (new upload => new uuid/row/URL), see _IMMUTABLE_CACHE above.
+    return FileResponse(row["file_path"], filename=Path(row["file_path"]).name,
+                        headers=_IMMUTABLE_CACHE)
 
 
 @app.post("/cases/{case_id}/face/match", response_model=FaceMatchResult)

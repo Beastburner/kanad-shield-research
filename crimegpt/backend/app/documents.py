@@ -236,7 +236,20 @@ def _accused_block(d: Docx, facts: ExtractedFacts):
 # ---------------------------------------------------------------------------
 # per-document builders
 # ---------------------------------------------------------------------------
-def _build_chargesheet(d, facts, sections, case_number):
+
+def _evidence_custody_line(evidence) -> str:
+    """Fill the chargesheet's s.193(3) chain-of-custody row from the case's
+    evidence locker. Full SHA-256, never truncated — a custody entry that cannot
+    be re-verified against the file is worthless. Blank when nothing is held."""
+    if not evidence:
+        return ""
+    return "; ".join(
+        f"{e['label'] or 'Unlabelled exhibit'} — SHA-256 {e['sha256']}"
+        for e in evidence
+    )
+
+
+def _build_chargesheet(d, facts, sections, case_number, evidence=()):
     _heading(d, "1. Parties")
     _kv(d, [("Complainant / Informant", facts.complainant or ""),
             ("Accused", ", ".join(facts.accused) or "")])
@@ -268,7 +281,8 @@ def _build_chargesheet(d, facts, sections, case_number):
         ("Whether accused arrested", ""),
         ("Whether released on bond / bail bond", ""),
         ("Whether forwarded in custody (s.190)", ""),
-        ("Chain of custody of electronic device (s.193(3))", ""),
+        ("Chain of custody of electronic device (s.193(3))",
+         _evidence_custody_line(evidence)),
         ("Whether investigation complete", ""),
     ])
 
@@ -278,7 +292,7 @@ def _build_chargesheet(d, facts, sections, case_number):
     ])
 
 
-def _build_remand_request(d, facts, sections, case_number):
+def _build_remand_request(d, facts, sections, case_number, evidence=()):
     _center(d, "In the Court of the Judicial Magistrate First Class, Ahmedabad", 11, bold=True)
     d.add_paragraph()
 
@@ -316,7 +330,7 @@ def _build_remand_request(d, facts, sections, case_number):
     _signoff(d, [["Investigating Officer", "Name & Rank, Police Station", "Date:"]])
 
 
-def _build_seizure_receipt(d, facts, sections, case_number):
+def _build_seizure_receipt(d, facts, sections, case_number, evidence=()):
     _heading(d, "Sections Invoked")
     _sections_block(d, sections)
 
@@ -364,7 +378,7 @@ def _build_seizure_receipt(d, facts, sections, case_number):
     ])
 
 
-def _build_court_custody_letter(d, facts, sections, case_number):
+def _build_court_custody_letter(d, facts, sections, case_number, evidence=()):
     _center(d, "In the Court of the Judicial Magistrate First Class, Ahmedabad", 11, bold=True)
     d.add_paragraph()
 
@@ -382,7 +396,7 @@ def _build_court_custody_letter(d, facts, sections, case_number):
     _signoff(d, [["Investigating Officer", "Name & Rank, Police Station", "Date:"]])
 
 
-def _build_accused_panchanama(d, facts, sections, case_number):
+def _build_accused_panchanama(d, facts, sections, case_number, evidence=()):
     _heading(d, "Sections Invoked")
     _sections_block(d, sections)
 
@@ -407,7 +421,7 @@ def _build_accused_panchanama(d, facts, sections, case_number):
     _signoff(d, [["Arresting Officer", "Name & Rank, Police Station"]])
 
 
-def _build_medical_treatment_letter(d, facts, sections, case_number):
+def _build_medical_treatment_letter(d, facts, sections, case_number, evidence=()):
     _para(d, "To,").runs[0].bold = True
     _para(d, "The Medical Officer / Superintendent,")
     _para(d, "________________________ Hospital, Ahmedabad.")
@@ -435,7 +449,7 @@ def _build_medical_treatment_letter(d, facts, sections, case_number):
     _signoff(d, [["Investigating Officer", "Name & Rank, Police Station", "Date:"]])
 
 
-def _build_face_identification_form(d, facts, sections, case_number):
+def _build_face_identification_form(d, facts, sections, case_number, evidence=()):
     _heading(d, "Accused Particulars")
     _kv(d, [
         ("Name / Alias", ", ".join(facts.accused) or ""),
@@ -471,7 +485,7 @@ def _build_face_identification_form(d, facts, sections, case_number):
     _signoff(d, [["Investigating Officer", "Name & Rank, Police Station"]])
 
 
-def _build_lers_request(d, facts, sections, case_number):
+def _build_lers_request(d, facts, sections, case_number, evidence=()):
     _para(d, "To,").runs[0].bold = True
     _para(d, "The Law Enforcement Response Team,")
     _para(d, "Meta Platforms, Inc. (Facebook / Instagram / WhatsApp)")
@@ -531,7 +545,7 @@ def _build_lers_request(d, facts, sections, case_number):
                  ["Endorsing Officer (SHO)", "Name & Rank"]])
 
 
-def _build_appearance_notice(d, facts, sections, case_number):
+def _build_appearance_notice(d, facts, sections, case_number, evidence=()):
     # Field order is the Second Schedule's, verbatim: Serial No. / Police Station /
     # addressee block / s.35(3) recital / appearance direction / officer-in-charge /
     # seal. Anything the case data cannot fill stays a blank for the officer.
@@ -583,6 +597,7 @@ def generate(
     case_number: str,
     facts: ExtractedFacts,
     sections: list[SuggestedSection],
+    evidence: list[dict] | tuple = (),
 ) -> str:
     """Render a properly-formatted document to .docx and return its file path."""
     Path(settings.artifact_dir).mkdir(parents=True, exist_ok=True)
@@ -590,7 +605,7 @@ def generate(
     _set_base_style(d)
     _title_block(d, doc_type)
     _case_header(d, case_number, facts)
-    _BUILDERS[doc_type](d, facts, sections, case_number)
+    _BUILDERS[doc_type](d, facts, sections, case_number, evidence)
     _footer(d)
 
     fname = f"{doc_type}_{uuid.uuid4().hex[:8]}.docx"

@@ -24,11 +24,21 @@ class FaceError(RuntimeError):
 def _cv2():
     try:
         import cv2
-        return cv2
     except ImportError:
         raise FaceError(
             "OpenCV not installed. Install it: pip install opencv-python-headless"
         )
+    # OpenCV 5.0 dropped CascadeClassifier, and uninstalling it over a headless
+    # build leaves cv2 importable but hollow. Check here, at the single entry
+    # point, so every caller keeps treating face detection as non-fatal.
+    missing = [a for a in ("CascadeClassifier", "imread", "imdecode")
+               if not hasattr(cv2, a)]
+    if missing:
+        raise FaceError(
+            f"unusable OpenCV {getattr(cv2, '__version__', '?')} "
+            f"(missing {', '.join(missing)}). Install opencv-python-headless<5."
+        )
+    return cv2
 
 
 def _cascade():

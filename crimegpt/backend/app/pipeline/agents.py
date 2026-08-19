@@ -6,7 +6,9 @@ Each LLM call is JSON-schema-constrained via llm.complete_json so a stage can
 never return free-form text. classification is constrained to the retrieved
 statute chunks — the model may ONLY pick from sections we actually retrieved."""
 
+import asyncio
 import re
+import time
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -31,6 +33,15 @@ _FENCE_CLOSE = "<<<END_FIR_NARRATIVE>>>"
 # sit in the opening paragraphs of an FIR; sending a full OCR'd scan to all three
 # stages triples token use and trips Groq's per-minute limit mid-demo.
 _CONTEXT_CHARS = 4000
+
+
+# Latency tuning for the three structured stage calls. These are temperature-0
+# JSON-fill tasks, so "low" reasoning effort on Groq's gpt-oss keeps the answer
+# while dropping most reasoning tokens (measured: same sections, stages 2-4x
+# faster, and far less pressure on the 8k tokens/min free-tier limit). The output
+# cap is a runaway guard only — real stage outputs are a few hundred tokens.
+_REASONING_EFFORT = "low"
+_MAX_OUTPUT_TOKENS = 2048
 
 
 def _fenced(narrative: str) -> str:
@@ -68,7 +79,9 @@ EXTRACT_SYS = (
 
 async def extract(narrative: str) -> ExtractedFacts:
     fenced = f"{_FENCE_OPEN}\n{narrative}\n{_FENCE_CLOSE}"
-    return await llm.complete_json(EXTRACT_SYS, fenced, ExtractedFacts)
+    return await llm.complete_json(EXTRACT_SYS, fenced, ExtractedFacts,
+                                   reasoning_effort=_REASONING_EFFORT,
+                                   max_tokens=_MAX_OUTPUT_TOKENS)
 
 
 # ----------------------------------------------------------------------------
@@ -116,9 +129,9 @@ async def classify(
     # every offence-creating code would let a strong special-act match crowd out
     # the BNS sections an ordinary theft/robbery case needs. Retrieving each pool
     # on its own budget means special-act reach costs BNS recall nothing.
-    bns_chunks = await retrieval.retrieve_statutes(query, k=6, codes=("BNS",))
-    special_chunks = await retrieval.retrieve_statutes(
-        query, k=3, codes=_SPECIAL_ACT_CODES
+    bns_chunks, special_chunks = await asyncio.gather(
+        retrieval.retrieve_statutes(query, k=6, codes=("BNS",)),
+        retrieval.retrieve_statutes(query, k=3, codes=_SPECIAL_ACT_CODES),
     )
     chunks = bns_chunks + special_chunks
     if not chunks:
@@ -133,7 +146,9 @@ async def classify(
         f"{_fenced(narrative)}\n\n"
         f"CANDIDATE STATUTE SECTIONS:\n{catalog}"
     )
-    out = await llm.complete_json(CLASSIFY_SYS, user, _ClassifierOutput)
+    out = await llm.complete_json(CLASSIFY_SYS, user, _ClassifierOutput,
+                                  reasoning_effort=_REASONING_EFFORT,
+                                  max_tokens=_MAX_OUTPUT_TOKENS)
 
     by_id = {str(c["id"]): c for c in chunks}
     sections: list[SuggestedSection] = []
@@ -196,7 +211,9 @@ async def validate(
         f"{_fenced(narrative)}\n\n"
         f"PROPOSED SECTIONS:\n{proposed}"
     )
-    return await llm.complete_json(VALIDATE_SYS, user, _ValidationOutput)
+    return await llm.complete_json(VALIDATE_SYS, user, _ValidationOutput,
+                                   reasoning_effort=_REASONING_EFFORT,
+                                   max_tokens=_MAX_OUTPUT_TOKENS)
 
 
 # ----------------------------------------------------------------------------
@@ -210,8 +227,12 @@ async def _classify_and_validate(
     Fail CLOSED — a section the validator did not explicitly confirm is dropped,
     never asserted to the officer. Keys are normalised because the model emits
     variants like "BNSS s.106" / "BNSS 106" / "bnss-106"."""
+    t0 = time.perf_counter()
     sections, chunks = await classify(facts, narrative)
+    print(f"[timing] classify {time.perf_counter() - t0:.2f}s")
+    t0 = time.perf_counter()
     verdict = await validate(facts, sections, chunks, narrative)
+    print(f"[timing] validate {time.perf_counter() - t0:.2f}s")
     fits = {_norm_key(k): v for k, v in verdict.per_section.items()}
     for s in sections:
         s.validated = fits.get(_norm_key(f"{s.code} {s.section_no}"), False)
@@ -221,9 +242,12 @@ async def run_pipeline(case_id, narrative: str) -> AnalyzeResult:
     # quota) the stages that need it are skipped and the curated keyword mapping —
     # which reads the narrative directly and needs no LLM — still gives the officer
     # a starting set of sections. A 502 would give them nothing.
+    t_total = time.perf_counter()
     llm_failed = False
     try:
+        t0 = time.perf_counter()
         facts = await extract(narrative)
+        print(f"[timing] extract {time.perf_counter() - t0:.2f}s")
         sections, chunks, verdict = await _classify_and_validate(facts, narrative)
         if not sections:
             # The architecture's "low confidence -> loop back to (2)". The model is
@@ -271,7 +295,9 @@ async def run_pipeline(case_id, narrative: str) -> AnalyzeResult:
     status = "review_required" if review_required else "analyzed"
 
     jquery = _judgment_query(facts, sections)
+    t0 = time.perf_counter()
     judgments_raw = await retrieval.retrieve_judgments(jquery, k=3)
+    print(f"[timing] judgments {time.perf_counter() - t0:.2f}s")
     judgments = [
         SuggestedJudgment(
             indiankanoon_doc_id=j["indiankanoon_doc_id"],
@@ -293,11 +319,12 @@ async def run_pipeline(case_id, narrative: str) -> AnalyzeResult:
     if not sections:
         concerns.insert(0, "No section could be matched to these facts — officer "
                            "must classify manually.")
-    elif review_required:
+    elif confidence < settings.confidence_threshold:
         concerns.insert(0, f"Confidence {confidence:.2f} is below the "
                            f"{settings.confidence_threshold:.2f} threshold — officer "
                            "review required.")
 
+    print(f"[timing] pipeline total {time.perf_counter() - t_total:.2f}s")
     return AnalyzeResult(
         case_id=case_id,
         status=status,

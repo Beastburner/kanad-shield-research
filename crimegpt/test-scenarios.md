@@ -62,7 +62,7 @@ the fracture.
 **Narrative:** Over two weeks the complainant received repeated WhatsApp messages from a known
 person threatening to kill him and burn his shop unless he withdrew a civil complaint. No money
 or property changed hands.
-**Expected:** BNS **351(2)** (criminal intimidation — threat of death; aggravated). · BNSS
+**Expected:** BNS **351(3)** (criminal intimidation — threat of death; aggravated). · BNSS
 **193**. · BSA **61, 62, 63** + **s.63 certificate** (WhatsApp chat as electronic record).
 NOT extortion (no delivery of property).
 

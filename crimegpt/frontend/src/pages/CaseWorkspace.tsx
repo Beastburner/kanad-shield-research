@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { renderAsync } from 'docx-preview';
+// docx-preview is loaded on demand (dynamic import in the viewer) so its weight
+// stays out of the main chunk — it is only needed once a preview is opened.
 import {
   Box,
   Button,
@@ -276,14 +277,20 @@ export default function CaseWorkspace() {
     setViewerTitle(title);
     setViewerLoading(true);
     setViewerBlob(null);
+    // Warm the code-split docx-preview chunk while the blob downloads, so the
+    // first open pays max(chunk, fetch) instead of chunk + fetch. Repeat calls
+    // are free — the module registry caches the import.
+    void import('docx-preview');
     try {
       const blob = await api.fetchDocumentBlob(docId, kind);
       setViewerBlob(blob);
+      // Spinner stays up; the render effect below clears it once the docx has
+      // actually been painted (previously it vanished before rendering began,
+      // leaving a blank dialog for the render duration).
     } catch (err) {
       console.error('Failed to load document for preview', err);
       setError(t('previewFailed'));
       setViewerOpen(false);
-    } finally {
       setViewerLoading(false);
     }
   };
@@ -291,11 +298,16 @@ export default function CaseWorkspace() {
   // Render the .docx into the dialog once both the blob and the container exist.
   useEffect(() => {
     if (viewerOpen && viewerBlob && viewerRef.current) {
-      viewerRef.current.innerHTML = '';
-      renderAsync(viewerBlob, viewerRef.current, undefined, {
-        className: 'docx-view',
-        inWrapper: true,
-      }).catch((e) => console.error('docx render failed', e));
+      const container = viewerRef.current;
+      container.innerHTML = '';
+      import('docx-preview')
+        .then(({ renderAsync }) =>
+          renderAsync(viewerBlob, container, undefined, {
+            className: 'docx-view',
+            inWrapper: true,
+          }))
+        .catch((e) => console.error('docx render failed', e))
+        .finally(() => setViewerLoading(false));
     }
   }, [viewerOpen, viewerBlob]);
 
@@ -337,78 +349,77 @@ export default function CaseWorkspace() {
     try {
       setLoading(true);
       setError(null);
-      
-      // Fetch Case Details
-      const caseData = await api.getCase(id);
-      setCaseObj(caseData);
 
-      // Fetch Case Diary (Timeline)
-      try {
-        const diaryData = await api.getDiary(id);
-        setDiary(diaryData);
-      } catch (err) {
-        console.error('Error fetching diary', err);
+      // All seven reads are independent, so issue them as ONE parallel batch.
+      // Awaiting them in sequence stacked 7 full round trips (on Render each is
+      // 300-800ms, i.e. ~2-5s of pure network wait before first paint); the
+      // batch costs roughly one. allSettled preserves the old per-call
+      // tolerance: facts/analysis legitimately 404 on a not-yet-analyzed case,
+      // and a failed diary fetch must not sink the documents list.
+      // getAnalysis is the read-only STORED analysis (no LLM re-run); fetching
+      // it unconditionally just 404s alongside facts for un-analyzed cases.
+      const [caseRes, diaryRes, auditRes, docsRes, evRes, factsRes, analysisRes] =
+        await Promise.allSettled([
+          api.getCase(id),
+          api.getDiary(id),
+          api.getAuditLog(id),
+          api.listDocuments(id),
+          api.listEvidence(id),
+          api.getFacts(id),
+          api.getAnalysis(id),
+        ]);
+
+      // Case details are the one load-bearing call — without them there is no
+      // workspace to show (same fatal handling as the old sequential version).
+      if (caseRes.status === 'rejected') {
+        console.error(caseRes.reason);
+        setError(t('workspaceLoadFailed'));
+        return;
+      }
+      setCaseObj(caseRes.value);
+
+      // Case Diary (Timeline)
+      if (diaryRes.status === 'fulfilled') setDiary(diaryRes.value);
+      else console.error('Error fetching diary', diaryRes.reason);
+
+      // Append-only audit trail (chain of custody)
+      if (auditRes.status === 'fulfilled') setAuditLog(auditRes.value);
+      else console.error('Error fetching audit log', auditRes.reason);
+
+      // Documents
+      if (docsRes.status === 'fulfilled') setDocuments(docsRes.value);
+      else console.error('Error fetching documents', docsRes.reason);
+
+      // Evidence (P5)
+      if (evRes.status === 'fulfilled') setEvidence(evRes.value);
+      else console.error('Error fetching evidence', evRes.reason);
+
+      // Facts (404 = not analyzed yet, we must run /analyze)
+      if (factsRes.status === 'fulfilled') {
+        setFacts(factsRes.value.facts);
+        setSavedFactsSnapshot(JSON.stringify(factsRes.value.facts));
+      } else if ((factsRes.reason as any)?.response?.status === 404) {
+        setFacts(null);
+      } else {
+        console.error('Error fetching facts', factsRes.reason);
       }
 
-      // Fetch the append-only audit trail (chain of custody)
-      try {
-        const auditData = await api.getAuditLog(id);
-        setAuditLog(auditData);
-      } catch (err) {
-        console.error('Error fetching audit log', err);
-      }
-
-      // Fetch Documents
-      try {
-        const docsData = await api.listDocuments(id);
-        setDocuments(docsData);
-      } catch (err) {
-        console.error('Error fetching documents', err);
-      }
-
-      // Fetch Evidence (P5)
-      try {
-        const evData = await api.listEvidence(id);
-        setEvidence(evData);
-      } catch (err) {
-        console.error('Error fetching evidence', err);
-      }
-
-      // Fetch Facts (might return 404 if not analyzed yet)
-      try {
-        const factsData = await api.getFacts(id);
-        setFacts(factsData.facts);
-        setSavedFactsSnapshot(JSON.stringify(factsData.facts));
-      } catch (err: any) {
-        if (err.response?.status === 404) {
-          // Facts don't exist yet, we must run /analyze
-          setFacts(null);
-        } else {
-          console.error('Error fetching facts', err);
+      // Stored analysis (read-only — does NOT re-run the LLM pipeline, so no
+      // extra cost and no duplicate "analyzed" diary entries). 404 simply means
+      // the case has not been analyzed; keep the empty defaults.
+      if (analysisRes.status === 'fulfilled') {
+        const analysisData = analysisRes.value;
+        setSections(analysisData.sections || []);
+        setJudgments(analysisData.judgments || []);
+        setAnalysisConfidence(analysisData.confidence || 0);
+        setReviewRequired(analysisData.review_required || false);
+        setValidationConcerns(analysisData.validation_concerns || []);
+        if (analysisData.disclaimer) {
+          setDisclaimer(analysisData.disclaimer);
         }
+      } else if ((analysisRes.reason as any)?.response?.status !== 404) {
+        console.error('Error fetching stored analysis', analysisRes.reason);
       }
-
-      // If already analyzed, load the STORED analysis (read-only — does NOT re-run the
-      // LLM pipeline, so no extra cost and no duplicate "analyzed" diary entries).
-      if (caseData.status === 'analyzed' || caseData.status === 'review_required' || caseData.status === 'documented') {
-        try {
-          const analysisData = await api.getAnalysis(id);
-          setSections(analysisData.sections || []);
-          setJudgments(analysisData.judgments || []);
-          setAnalysisConfidence(analysisData.confidence || 0);
-          setReviewRequired(analysisData.review_required || false);
-          setValidationConcerns(analysisData.validation_concerns || []);
-          if (analysisData.disclaimer) {
-            setDisclaimer(analysisData.disclaimer);
-          }
-        } catch (err) {
-          console.error('Error fetching stored analysis', err);
-        }
-      }
-
-    } catch (err: any) {
-      console.error(err);
-      setError(t('workspaceLoadFailed'));
     } finally {
       setLoading(false);
     }
@@ -501,15 +512,17 @@ export default function CaseWorkspace() {
       const langName = i18n.language === 'hi' ? t('langHindi') : i18n.language === 'gu' ? t('langGujarati') : t('langEnglish');
       setSuccess(t('docGenerated', { type, lang: langName }));
       
-      // Update Case Object Status to 'documented'
-      const updatedCase = await api.getCase(id);
+      // Refresh case status ('documented'), documents list, and timeline — the
+      // reads are independent, so one parallel batch instead of three stacked
+      // round trips ("generating…" used to hang on for 3 extra RTTs).
+      const [updatedCase, docsData] = await Promise.all([
+        api.getCase(id),
+        api.listDocuments(id),
+        refreshTrail(),
+      ]);
       setCaseObj(updatedCase);
-      
-      // Refresh documents and timeline
-      const docsData = await api.listDocuments(id);
       setDocuments(docsData);
-      await refreshTrail();
-      
+
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       console.error(err);
@@ -562,9 +575,9 @@ export default function CaseWorkspace() {
       await api.uploadEvidence(id, file, evLabel, evTags);
       setEvLabel('');
       setEvTags('');
-      const evData = await api.listEvidence(id);
+      // Independent reads — one parallel batch instead of two stacked RTTs.
+      const [evData] = await Promise.all([api.listEvidence(id), refreshTrail()]);
       setEvidence(evData);
-      await refreshTrail();
       setSuccess(t('evidenceUploaded'));
       setTimeout(() => setSuccess(null), 2500);
     } catch (err: any) {
@@ -651,6 +664,47 @@ export default function CaseWorkspace() {
     // (Form No. 1) — the one document whose exact layout is statutory.
     { type: 'appearance_notice', label: t('docAppearanceNotice'), desc: t('docAppearanceNoticeDesc') }
   ];
+
+  // The audit table used to print raw JSON. An audit trail nobody can read is an
+  // audit trail nobody can check, so each action gets a plain-language summary;
+  // the full record stays available on hover.
+  const auditSummary = (entry: AuditEntry): string => {
+    const a = (entry.after || {}) as Record<string, any>;
+    const b = (entry.before || {}) as Record<string, any>;
+    const hash = (h?: string) => (h ? `SHA-256 ${String(h).slice(0, 12)}…` : '');
+    const docName = (ty?: string) =>
+      documentTypes.find((d) => d.type === ty)?.label || ty || '';
+
+    switch (entry.action) {
+      case 'case.create':
+        return `Case ${a.case_number || ''} registered`;
+      case 'case.update': {
+        const skip = ['updated_at', 'id'];
+        const changed = Object.keys(a).filter(
+          (k) => !skip.includes(k) && JSON.stringify(a[k]) !== JSON.stringify(b[k])
+        );
+        return changed.length
+          ? `Facts corrected — ${changed.join(', ')}`
+          : 'Case updated';
+      }
+      case 'case.analyze':
+        return `Analysis run — ${a.status}, confidence ${Math.round((a.confidence || 0) * 100)}%`;
+      case 'document.generate':
+        return `${docName(a.type)} generated${a.version ? ` (v${a.version})` : ''} — ${hash(a.sha256)}`;
+      case 'diary.add':
+        return `Diary entry — ${a.description || a.event_type || ''}`;
+      case 'evidence.upload':
+        return `Evidence added: ${a.label || 'unlabelled'} — ${hash(a.sha256)}` +
+          (a.face_count != null ? `, ${a.face_count} face(s)` : '');
+      case 'forensics.screen':
+        return `Tamper screening: ${a.filename || ''} — ` +
+          ((a.flags || []).length ? (a.flags as string[]).join(', ') : 'no signals');
+      default:
+        return entry.after ? JSON.stringify(entry.after).slice(0, 160) : '—';
+    }
+  };
+
+
 
   return (
     <Box sx={{ py: 4, px: { xs: 2, md: 4 } }}>
@@ -1723,9 +1777,10 @@ export default function CaseWorkspace() {
                             <TableCell sx={{ maxWidth: 380 }}>
                               <Typography
                                 variant="caption"
-                                sx={{ fontFamily: 'monospace', color: 'text.secondary', wordBreak: 'break-word' }}
+                                title={entry.after ? JSON.stringify(entry.after, null, 1) : undefined}
+                                sx={{ color: 'text.secondary', wordBreak: 'break-word' }}
                               >
-                                {entry.after ? JSON.stringify(entry.after).slice(0, 160) : '—'}
+                                {auditSummary(entry)}
                               </Typography>
                             </TableCell>
                           </TableRow>

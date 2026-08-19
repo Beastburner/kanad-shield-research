@@ -26,32 +26,38 @@ from ..models import ExtractedFacts, SuggestedSection
 # Charging codes only: the BNS plus the special acts that create offences.
 _RULES: list[tuple[str, list[str], list[tuple[str, str]]]] = [
     ("Theft",
-     ["steal", "stole", "stolen", "theft", "thief", "shoplift", "was gone",
-      "were gone", "found missing", "went missing", "taken away"],
+     ["steal*", "stole", "stolen", "theft", "thief", "shoplift*", "was gone",
+      "were gone", "found missing", "went missing", "taken away",
+      # "missing" alone would misfire on missing-PERSON reports (a kidnapping
+      # matter, not theft) — require a property word alongside it.
+      "missing + motorcycle", "missing + vehicle", "missing + bike",
+      "missing + scooter", "missing + car", "missing + phone",
+      "missing + mobile", "missing + laptop", "missing + jewellery",
+      "missing + cash", "missing + purse", "missing + wallet"],
      [("BNS", "303"), ("BNS", "305"), ("BNS", "304")]),
     ("Snatching",
-     ["snatch", "snatched", "snatching", "pulled the chain", "pulled the gold",
+     ["snatch*", "snatched", "snatching", "pulled the chain", "pulled the gold",
       "from her neck", "from his neck", "grabbed the chain"],
      [("BNS", "304"), ("BNS", "303")]),
     ("Robbery",
-     ["robbery", "robbed", "loot", "looted"],
+     ["robber*", "robbed", "loot*", "looted"],
      [("BNS", "309"), ("BNS", "310")]),
     ("Dacoity",
-     ["dacoity", "dacoit"],
+     ["dacoity", "dacoit*"],
      [("BNS", "310"), ("BNS", "309")]),
     ("House-breaking / trespass",
      ["burglary", "burgled", "house-break", "housebreaking", "broke the lock",
-      "broke open", "broke into", "broken into", "trespass", "intruder",
+      "broke open", "broke into", "broken into", "trespass*", "intruder",
       "broke the latch", "broke the rear", "forced the door", "entered the house"],
      [("BNS", "330"), ("BNS", "331")]),
     ("Cheating / fraud",
-     ["cheat", "cheated", "cheating", "fraud", "defraud", "duped", "scam",
+     ["cheat*", "cheated", "cheating", "fraud*", "defraud*", "duped", "scam",
       "scammed", "swindle", "dishonestly induced", "dishonest intention",
       "advance payment", "sold the same", "double sold"],
      [("BNS", "318"), ("BNS", "319")]),
     ("Cybercrime / online fraud",
      ["upi", "phishing", "otp", "online fraud", "fake website", "digital arrest",
-      "cyber", "net banking", "netbanking", "fake link", "fraudulent transaction"],
+      "cyber*", "net banking", "netbanking", "fake link", "fraudulent transaction"],
      [("BNS", "318"), ("BNS", "319"), ("IT Act", "66D"), ("IT Act", "66C")]),
     ("Hacking / unauthorised access",
      ["hack", "hacked", "hacking", "unauthorised access", "unauthorized access",
@@ -61,33 +67,33 @@ _RULES: list[tuple[str, list[str], list[tuple[str, str]]]] = [
      ["obscene", "morphed", "vulgar photo", "nude", "objectionable content"],
      [("IT Act", "67")]),
     ("Criminal breach of trust",
-     ["breach of trust", "misappropriat", "embezzle", "entrusted"],
+     ["breach of trust", "misappropriat*", "embezzle*", "entrusted"],
      [("BNS", "316")]),
     ("Assault / hurt",
-     ["assault", "assaulted", "hurt", "beaten", "beat up", "injured", "injury",
+     ["assault*", "assaulted", "hurt", "beaten", "beat up", "injured", "injury",
       "attacked", "stabbed", "wounded", "hit", "fracture", "iron rod",
       "hospitalis", "hospitaliz", "medico-legal", "mlc", "bruise",
       "pushed her", "pushed him"],
      [("BNS", "115"), ("BNS", "117"), ("BNS", "131")]),
     ("Murder / culpable homicide",
-     ["murder", "murdered", "killed", "kill", "homicide", "strangled",
+     ["murder*", "murdered", "killed", "kill*", "homicide", "strangled",
       "shot dead", "hacked to death", "beaten to death"],
      [("BNS", "103"), ("BNS", "101"), ("BNS", "105")]),
     ("Attempt to murder",
      ["attempt to murder", "attempted to kill", "tried to kill"],
      [("BNS", "109")]),
     ("Kidnapping / abduction",
-     ["kidnap", "kidnapped", "kidnapping", "abduct", "abducted", "abduction",
+     ["kidnap", "kidnapped", "kidnapping", "abduct*", "abducted", "abduction",
       "took away the child", "missing child", "held captive", "confined"],
      [("BNS", "137"), ("BNS", "140")]),
     ("Criminal intimidation",
-     ["threat", "threaten", "threatened", "intimidat"],
+     ["threat*", "threaten", "threatened", "intimidat*"],
      [("BNS", "351")]),
     ("Extortion",
-     ["extort", "extortion", "ransom", "protection money", "hafta"],
+     ["extort*", "extortion", "ransom", "protection money", "hafta"],
      [("BNS", "308")]),
     ("Forgery",
-     ["forge", "forged", "forgery", "counterfeit", "fabricated document",
+     ["forge", "forged", "forgery", "counterfeit*", "fabricated document",
       "fake document"],
      [("BNS", "336"), ("BNS", "338"), ("BNS", "340")]),
     ("Sexual offence against a child",
@@ -98,7 +104,7 @@ _RULES: list[tuple[str, list[str], list[tuple[str, str]]]] = [
      ["child pornography", "csam", "child sexual abuse material"],
      [("IT Act", "67B"), ("POCSO", "12")]),
     ("Rape / sexual offence",
-     ["rape", "raped", "sexual assault", "sexually assaulted", "molest",
+     ["rape*", "raped", "sexual assault", "sexually assaulted", "molest*",
       "molested", "outrage her modesty", "disrobe"],
      [("BNS", "64"), ("BNS", "74"), ("BNS", "79"), ("BNS", "69")]),
     ("Dowry death / cruelty to wife",
@@ -106,22 +112,22 @@ _RULES: list[tuple[str, list[str], list[tuple[str, str]]]] = [
       "in-laws", "matrimonial cruelty"],
      [("BNS", "80"), ("BNS", "85")]),
     ("Rioting / unlawful assembly",
-     ["riot", "rioting", "unlawful assembly", "mob", "stone pelting",
+     ["riot*", "rioting", "unlawful assembly", "mob", "stone pelting",
       "stone-pelting", "communal clash"],
      [("BNS", "191"), ("BNS", "189")]),
     ("Mischief / arson",
-     ["mischief", "arson", "set on fire", "set fire", "torched", "vandalis",
-      "vandaliz", "damaged the vehicle", "damaged property"],
+     ["mischief", "arson", "set on fire", "set fire", "torched", "vandalis*",
+      "vandaliz*", "damaged the vehicle", "damaged property"],
      [("BNS", "324"), ("BNS", "326")]),
     ("Criminal conspiracy",
-     ["conspir", "in connivance", "hatched a plan"],
+     ["conspir*", "in connivance", "hatched a plan"],
      [("BNS", "61")]),
     ("Organised crime",
      ["organised crime", "organized crime", "crime syndicate", "gang"],
      [("BNS", "111"), ("BNS", "112")]),
     ("Bribery / corruption by public servant",
-     ["bribe", "bribery", "illegal gratification", "undue advantage",
-      "gratification", "corrupt", "corruption", "rishwat", "trap laid", "decoy",
+     ["bribe*", "bribery", "illegal gratification", "undue advantage",
+      "gratification", "corrupt*", "corruption", "rishwat", "trap laid", "decoy",
       # co-occurrence: an official designation together with a demand for money
       "public servant + demand", "government servant + demand",
       "government official + demand", "tehsildar + demand", "patwari + demand",
@@ -134,12 +140,12 @@ _RULES: list[tuple[str, list[str], list[tuple[str, str]]]] = [
      [("PC Act", "13")]),
     ("Narcotics / NDPS",
      ["ganja", "charas", "hashish", "cannabis", "marijuana", "heroin",
-      "brown sugar", "cocaine", "mdma", "mephedrone", "narcotic", "psychotropic",
+      "brown sugar", "cocaine", "mdma", "mephedrone", "narcotic*", "psychotropic",
       "ndps", "drug peddl", "contraband drug"],
      [("NDPS Act", "20"), ("NDPS Act", "21"), ("NDPS Act", "22"),
       ("NDPS Act", "8")]),
     ("Arms Act",
-     ["pistol", "revolver", "country made", "country-made", "katta", "firearm",
+     ["pistol", "revolver", "country made", "country-made", "katta", "firearm*",
       "live cartridge", "ammunition", "without licence", "without license",
       "unlicensed weapon"],
      [("Arms Act", "25"), ("Arms Act", "27")]),
@@ -168,16 +174,21 @@ def _haystack(facts: ExtractedFacts, narrative: str = "") -> str:
 def _matches(keyword: str, text: str) -> bool:
     # "a + b" requires BOTH parts present. Real FIRs describe conduct without
     # naming the offence — a bribery FIR says "the Tehsildar demanded Rs 15,000",
-    # never the word "bribe" — and single loose terms like "public servant" would
+    # never the word "bribe*" — and single loose terms like "public servant" would
     # fire on any case that merely mentions one. Co-occurrence catches the pattern
     # without the false positives.
     if " + " in keyword:
         return all(_matches(part, text) for part in keyword.split(" + "))
-    # Multi-word triggers ("broke the lock") are matched as a phrase; single
-    # words are matched on a word boundary to avoid spurious substring hits.
+    # Multi-word triggers ("broke the lock") match as a phrase. Single words match
+    # on BOTH boundaries; a trailing "*" opts a keyword into prefix matching for
+    # deliberate stems ("intimidat*" -> intimidate/intimidating/intimidation).
+    # Blanket prefix expansion was a false-positive factory: "mob" matched the
+    # words "mobile shop" and branded a motorcycle theft as Rioting.
     if " " in keyword:
         return keyword in text
-    return re.search(rf"\b{re.escape(keyword)}\w*", text) is not None
+    if keyword.endswith("*"):
+        return re.search(rf"\b{re.escape(keyword[:-1])}\w*", text) is not None
+    return re.search(rf"\b{re.escape(keyword)}\b", text) is not None
 
 
 async def fallback_sections(
