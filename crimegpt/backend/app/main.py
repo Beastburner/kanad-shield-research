@@ -5,6 +5,8 @@ an append-only audit log. See API_CONTRACT.md for the full frontend contract."""
 
 from contextlib import asynccontextmanager
 from pathlib import Path
+import hashlib
+
 from uuid import UUID
 
 from asyncpg.exceptions import UniqueViolationError
@@ -15,6 +17,7 @@ from fastapi.responses import FileResponse
 from . import (
     audit,
     documents,
+    forensics,
     evidence as evidence_mod,
     face as face_mod,
     integrity,
@@ -43,6 +46,7 @@ from .models import (
     MockFIRRequest,
     MockFIRResponse,
     OcrResponse,
+    ScreenResult,
     TranslateRequest,
     TranslateResponse,
 )
@@ -485,6 +489,28 @@ async def ocr_ingest(file: UploadFile = File(...), lang: str = "eng"):
     except ocr.OcrError as e:
         raise HTTPException(422, str(e))
     return OcrResponse(text=text, char_count=len(text), lang=lang, source=source)
+
+
+@app.post("/forensics/screen", response_model=ScreenResult)
+async def forensics_screen(file: UploadFile = File(...),
+                           actor: Actor = Depends(rbac.require("IO", "SHO", "LEGAL_ADVISOR"))):
+    """Tamper-screen an uploaded PDF/image: incremental-update, metadata,
+    text-over-scan, EXIF and ELA triage signals. Read-only analysis (all roles).
+    The hash is computed over the exact received bytes, so the screening result
+    is bound to a specific file even before it is stored as evidence."""
+    data = await file.read()
+    if not data:
+        raise HTTPException(422, "empty file")
+    try:
+        result = forensics.screen(data, file.filename or "")
+    except forensics.ScreeningError as e:
+        raise HTTPException(422, str(e))
+    sha = hashlib.sha256(data).hexdigest()
+    await audit.record("forensics.screen", actor=str(actor),
+                       after={"filename": file.filename, "sha256": sha,
+                              "flags": [f["check"] for f in result["flags"]]})
+    return ScreenResult(kind=result["kind"], sha256=sha,
+                        flags=result["flags"], note=result["note"])
 
 
 @app.post("/translate", response_model=TranslateResponse)

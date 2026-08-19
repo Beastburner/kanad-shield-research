@@ -57,7 +57,7 @@ import {
   Lock,
   ShieldCheck
 } from 'lucide-react';
-import { api, type Case, type FactsBlob, type LegalSection, type Judgment, type DocumentResponse, type DiaryEvent, type Evidence, type FaceMatchResult, type AuditEntry } from '../api';
+import { api, type Case, type FactsBlob, type LegalSection, type Judgment, type DocumentResponse, type DiaryEvent, type Evidence, type FaceMatchResult, type AuditEntry, type ScreenResult } from '../api';
 import { useActor } from '../useActor';
 import { MONO_FONT } from '../theme';
 
@@ -229,6 +229,11 @@ export default function CaseWorkspace() {
   const [bpQuery, setBpQuery] = useState('');
   const [bpResult, setBpResult] = useState<any>(null);
   const [bpLoading, setBpLoading] = useState(false);
+
+  // Document Tamper Screening (Tools tab)
+  const [screenResult, setScreenResult] = useState<ScreenResult | null>(null);
+  const [screening, setScreening] = useState(false);
+  const [screenError, setScreenError] = useState<string | null>(null);
 
   // Quick Translation Tool
   const [transInput, setTransInput] = useState('');
@@ -532,6 +537,21 @@ export default function CaseWorkspace() {
       setBpResult({ matches: [], source: 'MOCK_BHARATPOL', query: bpQuery });
     } finally {
       setBpLoading(false);
+    }
+  };
+
+  const handleScreenDocument = async (file: File | null) => {
+    if (!file) return;
+    try {
+      setScreening(true);
+      setScreenError(null);
+      setScreenResult(null);
+      setScreenResult(await api.screenDocument(file));
+    } catch (err: any) {
+      console.error(err);
+      setScreenError(err.response?.data?.detail || t('screenFailed'));
+    } finally {
+      setScreening(false);
     }
   };
 
@@ -1664,6 +1684,54 @@ export default function CaseWorkspace() {
                         </Box>
                       )}
                     </Box>
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              {/* Document Tamper Screening — triage signals for an uploaded
+                  PDF/image (incremental updates, metadata, EXIF, ELA). Signals
+                  for the officer, never verdicts; the response's note says so. */}
+              <Grid size={12}>
+                <Card>
+                  <CardContent sx={{ p: 3 }}>
+                    <Typography variant="h6" sx={{ fontWeight: 700, mb: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <ShieldAlert size={20} aria-hidden="true" style={{ color: 'var(--mui-palette-warning-main)' }} />
+                      {t('screenTitle')}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                      {t('screenHint')}
+                    </Typography>
+
+                    <Button variant="outlined" component="label" disabled={screening}
+                      startIcon={screening ? <CircularProgress size={14} /> : <FileCheck size={14} />}>
+                      {t('screenButton')}
+                      <input hidden type="file" accept=".pdf,image/*"
+                        onChange={(e) => { handleScreenDocument(e.target.files?.[0] ?? null); e.target.value = ''; }} />
+                    </Button>
+
+                    {screenError && (
+                      <Alert severity="error" sx={{ mt: 2 }}>{screenError}</Alert>
+                    )}
+
+                    {screenResult && (
+                      <Box sx={{ mt: 2.5, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                        <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary', wordBreak: 'break-all' }}>
+                          {screenResult.kind.toUpperCase()} · SHA-256 {screenResult.sha256}
+                        </Typography>
+                        {screenResult.flags.map((f, i) => (
+                          <Alert key={i}
+                            severity={f.severity === 'warning' ? 'warning' : f.severity === 'caution' ? 'info' : 'success'}
+                            icon={f.severity === 'warning' ? <ShieldAlert size={18} /> : undefined}
+                            sx={{ alignItems: 'flex-start' }}>
+                            <Typography variant="body2" sx={{ fontWeight: 600 }}>{f.finding}</Typography>
+                            <Typography variant="caption" color="text.secondary">{f.detail}</Typography>
+                          </Alert>
+                        ))}
+                        <Typography variant="caption" sx={{ color: 'text.secondary', fontStyle: 'italic' }}>
+                          {screenResult.note}
+                        </Typography>
+                      </Box>
+                    )}
                   </CardContent>
                 </Card>
               </Grid>

@@ -60,6 +60,7 @@ backend/
 │   ├── face.py            face detection + demonstrative matching (OpenCV)
 │   ├── ocr.py             scanned-FIR ingestion (Tesseract + PyMuPDF)
 │   ├── translate.py       Hindi/Gujarati translation, incl. whole .docx files
+│   ├── forensics.py       document tamper screening (triage, not verdicts)
 │   ├── mocks.py           mock CCTNS / BharatPol (honestly labelled)
 │   └── pipeline/
 │       ├── agents.py      the 4-stage pipeline orchestrator
@@ -75,7 +76,7 @@ backend/
 │   ├── run_scenarios.py   13-scenario classifier gate (run before every demo)
 │   ├── check_providers.py verifies both LLM providers return parseable JSON
 │   └── embed_statutes.py  backfills pgvector embeddings (semantic retrieval)
-├── tests/                 40 tests: documents, integrity, RBAC, audit append-only
+├── tests/                 47 tests: documents, integrity, RBAC, audit, forensics
 ├── docker-compose.yml     Postgres 16 + pgvector, auto-applies schema+seed
 └── render.yaml            deployment config (Render blueprint)
 ```
@@ -146,6 +147,7 @@ Every endpoint lives here; there are no hidden routers. Highlights:
 | `POST /cases/{id}/face/match` | demonstrative face matching |
 | `POST /mock/cctns/fir`, `GET /mock/bharatpol/lookup` | labelled mocks (see mocks.py) |
 | `POST /ocr` | scanned FIR → text |
+| `POST /forensics/screen` | tamper-screen an uploaded PDF/image (triage flags) |
 | `POST /translate` | free-text translation (en/hi/gu) |
 | `GET /health` | liveness |
 
@@ -235,6 +237,25 @@ Uses the same LLM (no extra dependency). Two paths:
    (a dropped item falls back to English rather than corrupting the file), and
    rewritten in place. Best-effort: on any failure the document remains in
    English — translation is never allowed to break generation.
+
+### forensics.py — document tamper screening
+Two problems, carefully separated. Integrity **after** receipt is already solved
+(SHA-256 at intake + append-only audit — tamper-evident custody). Authenticity
+**before** receipt — was the file forged before it reached the police? — cannot
+be proven by any hash, so this module provides **screening**: deterministic
+triage signals, graded info/caution/warning, each with its innocent explanation
+stated. PDF checks: incremental updates (the PDF format *appends* edits — a
+second xref section means the file was modified after creation, and the original
+bytes may still be recoverable from it), CreationDate/ModDate mismatch,
+editing-software metadata, a text layer sitting over a full-page scan, signature
+fields. Image checks: EXIF editor tags, capture-vs-modified timestamps, stripped
+EXIF (noted as normal for WhatsApp forwards), and an error-level-analysis score
+for JPEGs (reported as indicative only). Every response carries a standing note:
+*screening, not a forensic finding — certified opinion rests with the FSL /
+Examiner of Electronic Evidence* — the same fail-closed philosophy as the blank
+s.63 Part B. Exposed as `POST /forensics/screen` (read-only, all roles, audited)
+and as the "Document Tamper Screening" panel in the Tools tab. Tested against a
+real incremental-save edit (test_forensics.py).
 
 ### mocks.py
 `POST /mock/cctns/fir` returns a simulated FIR record; `GET
@@ -472,7 +493,7 @@ upload.
 
 | Gate | What it proves | Cost |
 |---|---|---|
-| `python -m pytest` (40 tests, ~6 s) | all 9 document types produce valid OOXML with hash + certificate; the stored SHA-256 matches an **independent recomputation from the file bytes** and appears inside the certificate; version supersession; RBAC allow/deny incl. the fail-closed regression; audit log UPDATE/DELETE **refused at the database level** over a raw connection | zero LLM tokens |
+| `python -m pytest` (47 tests, ~6 s) | all 9 document types produce valid OOXML with hash + certificate; the stored SHA-256 matches an **independent recomputation from the file bytes** and appears inside the certificate; version supersession; RBAC allow/deny incl. the fail-closed regression; audit log UPDATE/DELETE **refused at the database level** over a raw connection | zero LLM tokens |
 | `python -m scripts.run_scenarios` (13 scenarios) | the classifier returns the expected primary sections; **hard-fails if any repealed IPC/CrPC/IEA section ever appears as a charge** | ~⅓ of a free-tier Groq day — run early, not repeatedly |
 | `python -m scripts.check_providers` | both LLM providers reachable and returning parseable JSON | a few hundred tokens |
 

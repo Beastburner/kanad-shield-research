@@ -225,6 +225,25 @@ class TranslateResponse(BaseModel):
     text: str
 
 
+# ---- document tamper screening -------------------------------------------
+class ScreeningFlag(BaseModel):
+    check: str
+    severity: Literal["info", "caution", "warning"]
+    finding: str
+    detail: str
+
+
+class ScreenResult(BaseModel):
+    """Tamper-screening triage for an uploaded document. Flags are signals for
+    the officer, never verdicts — the `note` says so and travels with every
+    response."""
+
+    kind: Literal["pdf", "image"]
+    sha256: str
+    flags: list[ScreeningFlag]
+    note: str
+
+
 # ---- OCR ingestion -------------------------------------------------------
 class OcrResponse(BaseModel):
     text: str

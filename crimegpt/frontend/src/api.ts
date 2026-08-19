@@ -126,6 +126,22 @@ export interface DiaryEvent {
   source: 'system' | 'officer';
 }
 
+// Tamper-screening triage for an uploaded PDF/image. Flags are signals for the
+// officer, never verdicts — the note field says so on every response.
+export interface ScreeningFlag {
+  check: string;
+  severity: 'info' | 'caution' | 'warning';
+  finding: string;
+  detail: string;
+}
+
+export interface ScreenResult {
+  kind: 'pdf' | 'image';
+  sha256: string;
+  flags: ScreeningFlag[];
+  note: string;
+}
+
 export interface AuditEntry {
   id: string;
   action: string;
@@ -300,6 +316,15 @@ export const api = {
     formData.append('label', label);
     formData.append('tags', tags);
     const response = await apiClient.post<Evidence>(`/cases/${caseId}/evidence`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
+  screenDocument: async (file: File): Promise<ScreenResult> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await apiClient.post<ScreenResult>('/forensics/screen', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
     return response.data;
